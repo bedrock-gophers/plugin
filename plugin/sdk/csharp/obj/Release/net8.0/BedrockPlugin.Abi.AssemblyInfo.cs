@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BedrockPlugin.Abi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+991010e5ec9a026481ca38de3249157358e58021")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e6d139c367237b0e3b626b2dfd9dd07df714d68d")]
 [assembly: System.Reflection.AssemblyProductAttribute("BedrockPlugin.Abi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BedrockPlugin.Abi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

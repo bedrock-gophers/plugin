@@ -157,6 +157,38 @@ public sealed class PlayerRef
 
     public bool SetShowCoordinates(bool value) => HostBool(h => h.SetPlayerShowCoordinates(Id, value));
 
+    public ItemStackData MainHandItem() => HostValue(new ItemStackData(0, false, string.Empty, 0, string.Empty), h => h.PlayerMainHandItem(Id));
+
+    public bool SetMainHandItem(ItemStackData stack) => HostBool(h => h.SetPlayerMainHandItem(Id, stack));
+
+    public ItemStackData OffHandItem() => HostValue(new ItemStackData(0, false, string.Empty, 0, string.Empty), h => h.PlayerOffHandItem(Id));
+
+    public bool SetOffHandItem(ItemStackData stack) => HostBool(h => h.SetPlayerOffHandItem(Id, stack));
+
+    public IReadOnlyList<ItemStackData> InventoryItems() => HostValue<IReadOnlyList<ItemStackData>>(Array.Empty<ItemStackData>(), h => h.PlayerInventoryItems(Id));
+
+    public bool SetInventoryItems(IReadOnlyList<ItemStackData> items) => HostBool(h => h.SetPlayerInventoryItems(Id, items));
+
+    public IReadOnlyList<ItemStackData> EnderChestItems() => HostValue<IReadOnlyList<ItemStackData>>(Array.Empty<ItemStackData>(), h => h.PlayerEnderChestItems(Id));
+
+    public bool SetEnderChestItems(IReadOnlyList<ItemStackData> items) => HostBool(h => h.SetPlayerEnderChestItems(Id, items));
+
+    public IReadOnlyList<ItemStackData> ArmourItems() => HostValue<IReadOnlyList<ItemStackData>>(Array.Empty<ItemStackData>(), h => h.PlayerArmourItems(Id));
+
+    public bool SetArmourItems(IReadOnlyList<ItemStackData> items) => HostBool(h => h.SetPlayerArmourItems(Id, items));
+
+    public bool SetHeldSlot(int slot) => HostBool(h => h.SetPlayerHeldSlot(Id, slot));
+
+    public bool MoveItemsToInventory() => HostBool(h => h.PlayerMoveItemsToInventory(Id));
+
+    public bool CloseForm() => HostBool(h => h.PlayerCloseForm(Id));
+
+    public bool CloseDialogue() => HostBool(h => h.PlayerCloseDialogue(Id));
+
+    public bool SendMenuForm(MenuFormData value) => HostBool(h => h.PlayerSendMenuForm(Id, value));
+
+    public bool SendModalForm(ModalFormData value) => HostBool(h => h.PlayerSendModalForm(Id, value));
+
     public void Message(string message)
     {
         HostDo(h => h.PlayerMessage(Id, message));

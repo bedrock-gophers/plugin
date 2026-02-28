@@ -133,6 +133,32 @@ func (m MutableVec3) Set(v Vec3) {
 	m.Z.Set(v.Z)
 }
 
+type MutableItemStack struct {
+	Count      MutableArgument[int]
+	HasItem    MutableArgument[bool]
+	ItemName   MutableArgument[string]
+	ItemMeta   MutableArgument[int]
+	CustomName MutableArgument[string]
+}
+
+func (m MutableItemStack) Get() ItemStackData {
+	return ItemStackData{
+		Count:      int32(m.Count.Get()),
+		HasItem:    m.HasItem.Get(),
+		ItemName:   m.ItemName.Get(),
+		ItemMeta:   int32(m.ItemMeta.Get()),
+		CustomName: m.CustomName.Get(),
+	}
+}
+
+func (m MutableItemStack) Set(v ItemStackData) {
+	m.Count.Set(int(v.Count))
+	m.HasItem.Set(v.HasItem)
+	m.ItemName.Set(v.ItemName)
+	m.ItemMeta.Set(int(v.ItemMeta))
+	m.CustomName.Set(v.CustomName)
+}
+
 func mutableString(ev *Event, slot uint32) MutableArgument[string] {
 	return MutableArgument[string]{
 		get: func() string { return ev.getString(slot) },

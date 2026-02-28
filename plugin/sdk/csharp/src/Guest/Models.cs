@@ -25,6 +25,17 @@ public sealed record ItemStackData(
     int ItemMeta,
     string CustomName);
 
+public sealed record MenuFormData(
+    string Title,
+    string Body,
+    IReadOnlyList<string> Buttons);
+
+public sealed record ModalFormData(
+    string Title,
+    string Body,
+    string Confirm,
+    string Cancel);
+
 public sealed record DamageSourceData(
     bool Present,
     string Type,

@@ -13,6 +13,9 @@ extern uint8_t* csharp_manage_plugins(uintptr_t ctx, uint32_t action, char* targ
 extern uint64_t csharp_resolve_player_by_name(uintptr_t ctx, char* name);
 extern uint8_t* csharp_online_player_names(uintptr_t ctx, uint32_t* out_len);
 extern void csharp_console_message(uintptr_t ctx, char* plugin_name, char* message);
+extern uint8_t* csharp_host_call(uintptr_t ctx, uint32_t op, uint8_t* payload, uint32_t payload_len, uint32_t* out_len);
+extern int csharp_event_cancel(uintptr_t ctx, uint64_t request_key);
+extern int csharp_event_item_drop_set(uintptr_t ctx, uint64_t request_key, uint8_t* payload, uint32_t payload_len);
 
 extern double csharp_player_health(uintptr_t ctx, uint64_t player_id);
 extern int csharp_set_player_health(uintptr_t ctx, uint64_t player_id, double health);
@@ -84,6 +87,9 @@ typedef struct {
 	uint64_t (*resolve_player_by_name)(uintptr_t ctx, char* name);
 	uint8_t* (*online_player_names)(uintptr_t ctx, uint32_t* out_len);
 	void (*console_message)(uintptr_t ctx, char* plugin_name, char* message);
+	uint8_t* (*host_call)(uintptr_t ctx, uint32_t op, uint8_t* payload, uint32_t payload_len, uint32_t* out_len);
+	int (*event_cancel)(uintptr_t ctx, uint64_t request_key);
+	int (*event_item_drop_set)(uintptr_t ctx, uint64_t request_key, uint8_t* payload, uint32_t payload_len);
 
 	double (*player_health)(uintptr_t ctx, uint64_t player_id);
 	int (*set_player_health)(uintptr_t ctx, uint64_t player_id, double health);
@@ -161,6 +167,9 @@ static csharp_host_api make_host_api(uintptr_t ctx) {
 	api.resolve_player_by_name = csharp_resolve_player_by_name;
 	api.online_player_names = csharp_online_player_names;
 	api.console_message = csharp_console_message;
+	api.host_call = csharp_host_call;
+	api.event_cancel = csharp_event_cancel;
+	api.event_item_drop_set = csharp_event_item_drop_set;
 
 	api.player_health = csharp_player_health;
 	api.set_player_health = csharp_set_player_health;
@@ -264,6 +273,7 @@ import (
 	"unsafe"
 
 	"github.com/bedrock-gophers/plugin/plugin/abi"
+	"github.com/bedrock-gophers/plugin/plugin/internal/ctxkey"
 	guest "github.com/bedrock-gophers/plugin/plugin/sdk/go"
 )
 
@@ -282,24 +292,33 @@ type csharpRuntime struct {
 type csharpHostContext struct {
 	manager *Manager
 	plugin  *pluginRuntime
+
+	mutableMu   sync.RWMutex
+	mutableNext uint64
+	mutableByID map[uint64]*mutableState
 }
 
 var (
 	csharpHostCtxMu   sync.RWMutex
 	csharpHostCtxNext uintptr = 1
-	csharpHostCtx             = map[uintptr]csharpHostContext{}
+	csharpHostCtx             = map[uintptr]*csharpHostContext{}
 )
 
 func registerCSharpHostContext(m *Manager, plug *pluginRuntime) uintptr {
 	csharpHostCtxMu.Lock()
 	id := csharpHostCtxNext
 	csharpHostCtxNext++
-	csharpHostCtx[id] = csharpHostContext{manager: m, plugin: plug}
+	csharpHostCtx[id] = &csharpHostContext{
+		manager:     m,
+		plugin:      plug,
+		mutableNext: 1,
+		mutableByID: map[uint64]*mutableState{},
+	}
 	csharpHostCtxMu.Unlock()
 	return id
 }
 
-func csharpHostContextByID(id uintptr) (csharpHostContext, bool) {
+func csharpHostContextByID(id uintptr) (*csharpHostContext, bool) {
 	csharpHostCtxMu.RLock()
 	v, ok := csharpHostCtx[id]
 	csharpHostCtxMu.RUnlock()
@@ -310,6 +329,49 @@ func unregisterCSharpHostContext(id uintptr) {
 	csharpHostCtxMu.Lock()
 	delete(csharpHostCtx, id)
 	csharpHostCtxMu.Unlock()
+}
+
+func registerCSharpMutableState(ctxID uintptr, mutable *mutableState) uint64 {
+	if mutable == nil {
+		return 0
+	}
+	hostCtx, ok := csharpHostContextByID(ctxID)
+	if !ok || hostCtx == nil {
+		return 0
+	}
+	hostCtx.mutableMu.Lock()
+	id := hostCtx.mutableNext
+	hostCtx.mutableNext++
+	hostCtx.mutableByID[id] = mutable
+	hostCtx.mutableMu.Unlock()
+	return id
+}
+
+func csharpMutableState(ctxID uintptr, requestKey uint64) (*mutableState, bool) {
+	if requestKey == 0 {
+		return nil, false
+	}
+	hostCtx, ok := csharpHostContextByID(ctxID)
+	if !ok || hostCtx == nil {
+		return nil, false
+	}
+	hostCtx.mutableMu.RLock()
+	mutable, ok := hostCtx.mutableByID[requestKey]
+	hostCtx.mutableMu.RUnlock()
+	return mutable, ok
+}
+
+func unregisterCSharpMutableState(ctxID uintptr, requestKey uint64) {
+	if requestKey == 0 {
+		return
+	}
+	hostCtx, ok := csharpHostContextByID(ctxID)
+	if !ok || hostCtx == nil {
+		return
+	}
+	hostCtx.mutableMu.Lock()
+	delete(hostCtx.mutableByID, requestKey)
+	hostCtx.mutableMu.Unlock()
 }
 
 func (m *Manager) startCSharpPlugin(plug *pluginRuntime) error {
@@ -649,6 +711,69 @@ func csharp_console_message(ctx C.uintptr_t, pluginName *C.char, message *C.char
 		name = hostCtx.plugin.name
 	}
 	hostCtx.manager.ConsoleMessage(name, goCString(message))
+}
+
+//export csharp_host_call
+func csharp_host_call(ctx C.uintptr_t, op C.uint32_t, payload *C.uint8_t, payloadLen C.uint32_t, outLen *C.uint32_t) *C.uint8_t {
+	if outLen != nil {
+		*outLen = 0
+	}
+	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
+	if !ok || hostCtx.manager == nil {
+		return nil
+	}
+
+	var in []byte
+	if payloadLen > 0 {
+		if payload == nil {
+			return nil
+		}
+		in = C.GoBytes(unsafe.Pointer(payload), C.int(payloadLen))
+	}
+
+	out := hostCtx.manager.HostCall(uint32(op), in)
+	ptr, size := cBytes(out)
+	if outLen != nil {
+		*outLen = size
+	}
+	return ptr
+}
+
+func setMutableItemDrop(mutable *mutableState, value ItemStackData) {
+	if mutable == nil {
+		return
+	}
+	mutable.SetI64(ctxkey.ItemDropCount, int64(value.Count))
+	mutable.SetBool(ctxkey.ItemDropHasItem, value.HasItem)
+	mutable.SetString(ctxkey.ItemDropName, value.ItemName)
+	mutable.SetI64(ctxkey.ItemDropMeta, int64(value.ItemMeta))
+	mutable.SetString(ctxkey.ItemDropCustomName, value.CustomName)
+}
+
+//export csharp_event_cancel
+func csharp_event_cancel(ctx C.uintptr_t, requestKey C.uint64_t) C.int {
+	mutable, ok := csharpMutableState(uintptr(ctx), uint64(requestKey))
+	if !ok || mutable == nil {
+		return 0
+	}
+	mutable.Cancel()
+	return 1
+}
+
+//export csharp_event_item_drop_set
+func csharp_event_item_drop_set(ctx C.uintptr_t, requestKey C.uint64_t, payload *C.uint8_t, payloadLen C.uint32_t) C.int {
+	mutable, ok := csharpMutableState(uintptr(ctx), uint64(requestKey))
+	if !ok || mutable == nil || payload == nil || payloadLen == 0 {
+		return 0
+	}
+	in := C.GoBytes(unsafe.Pointer(payload), C.int(payloadLen))
+	d := abi.NewDecoder(in)
+	value, ok := decodeItemStackPayload(d)
+	if !ok {
+		return 0
+	}
+	setMutableItemDrop(mutable, value)
+	return 1
 }
 
 //export csharp_player_health

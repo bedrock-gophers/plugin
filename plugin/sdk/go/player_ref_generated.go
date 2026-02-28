@@ -231,6 +231,70 @@ func (p PlayerRef) SetShowCoordinates(value bool) bool {
 	return setPlayerShowCoordinates(p.id, value)
 }
 
+func (p PlayerRef) MainHandItem() ItemStackData {
+	return playerMainHandItem(p.id)
+}
+
+func (p PlayerRef) SetMainHandItem(stack ItemStackData) bool {
+	return setPlayerMainHandItem(p.id, stack)
+}
+
+func (p PlayerRef) OffHandItem() ItemStackData {
+	return playerOffHandItem(p.id)
+}
+
+func (p PlayerRef) SetOffHandItem(stack ItemStackData) bool {
+	return setPlayerOffHandItem(p.id, stack)
+}
+
+func (p PlayerRef) InventoryItems() []ItemStackData {
+	return playerInventoryItems(p.id)
+}
+
+func (p PlayerRef) SetInventoryItems(items []ItemStackData) bool {
+	return setPlayerInventoryItems(p.id, items)
+}
+
+func (p PlayerRef) EnderChestItems() []ItemStackData {
+	return playerEnderChestItems(p.id)
+}
+
+func (p PlayerRef) SetEnderChestItems(items []ItemStackData) bool {
+	return setPlayerEnderChestItems(p.id, items)
+}
+
+func (p PlayerRef) ArmourItems() []ItemStackData {
+	return playerArmourItems(p.id)
+}
+
+func (p PlayerRef) SetArmourItems(items []ItemStackData) bool {
+	return setPlayerArmourItems(p.id, items)
+}
+
+func (p PlayerRef) SetHeldSlot(slot int32) bool {
+	return setPlayerHeldSlot(p.id, slot)
+}
+
+func (p PlayerRef) MoveItemsToInventory() bool {
+	return playerMoveItemsToInventory(p.id)
+}
+
+func (p PlayerRef) CloseForm() bool {
+	return playerCloseForm(p.id)
+}
+
+func (p PlayerRef) CloseDialogue() bool {
+	return playerCloseDialogue(p.id)
+}
+
+func (p PlayerRef) SendMenuForm(value MenuFormData) bool {
+	return playerSendMenuForm(p.id, value)
+}
+
+func (p PlayerRef) SendModalForm(value ModalFormData) bool {
+	return playerSendModalForm(p.id, value)
+}
+
 func (p PlayerRef) Message(message string) {
 	playerMessage(p.id, message)
 }

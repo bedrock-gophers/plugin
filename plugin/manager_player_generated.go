@@ -215,6 +215,70 @@ func (m *Manager) SetPlayerShowCoordinates(playerID uint64, value bool) bool {
 	return m.playerToggle(playerID, value, (*player.Player).ShowCoordinates, (*player.Player).HideCoordinates)
 }
 
+func (m *Manager) PlayerMainHandItem(playerID uint64) ItemStackData {
+	return playerValue(m, playerID, ItemStackData{}, func(p *player.Player) ItemStackData { return mainHandItemData(p) })
+}
+
+func (m *Manager) SetPlayerMainHandItem(playerID uint64, stack ItemStackData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return setMainHandItemData(p, stack) })
+}
+
+func (m *Manager) PlayerOffHandItem(playerID uint64) ItemStackData {
+	return playerValue(m, playerID, ItemStackData{}, func(p *player.Player) ItemStackData { return offHandItemData(p) })
+}
+
+func (m *Manager) SetPlayerOffHandItem(playerID uint64, stack ItemStackData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return setOffHandItemData(p, stack) })
+}
+
+func (m *Manager) PlayerInventoryItems(playerID uint64) []ItemStackData {
+	return playerValue(m, playerID, nil, func(p *player.Player) []ItemStackData { return inventoryItemsData(p.Inventory()) })
+}
+
+func (m *Manager) SetPlayerInventoryItems(playerID uint64, items []ItemStackData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return setInventoryItemsData(p.Inventory(), items) })
+}
+
+func (m *Manager) PlayerEnderChestItems(playerID uint64) []ItemStackData {
+	return playerValue(m, playerID, nil, func(p *player.Player) []ItemStackData { return inventoryItemsData(p.EnderChestInventory()) })
+}
+
+func (m *Manager) SetPlayerEnderChestItems(playerID uint64, items []ItemStackData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return setInventoryItemsData(p.EnderChestInventory(), items) })
+}
+
+func (m *Manager) PlayerArmourItems(playerID uint64) []ItemStackData {
+	return playerValue(m, playerID, nil, func(p *player.Player) []ItemStackData { return armourItemsData(p.Armour()) })
+}
+
+func (m *Manager) SetPlayerArmourItems(playerID uint64, items []ItemStackData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return setArmourItemsData(p.Armour(), items) })
+}
+
+func (m *Manager) SetPlayerHeldSlot(playerID uint64, slot int32) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return p.SetHeldSlot(int(slot)) == nil })
+}
+
+func (m *Manager) PlayerMoveItemsToInventory(playerID uint64) bool {
+	return m.playerUpdate(playerID, (*player.Player).MoveItemsToInventory)
+}
+
+func (m *Manager) PlayerCloseForm(playerID uint64) bool {
+	return m.playerUpdate(playerID, (*player.Player).CloseForm)
+}
+
+func (m *Manager) PlayerCloseDialogue(playerID uint64) bool {
+	return m.playerUpdate(playerID, (*player.Player).CloseDialogue)
+}
+
+func (m *Manager) PlayerSendMenuForm(playerID uint64, value MenuFormData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return sendMenuFormData(p, value) })
+}
+
+func (m *Manager) PlayerSendModalForm(playerID uint64, value ModalFormData) bool {
+	return playerValue(m, playerID, false, func(p *player.Player) bool { return sendModalFormData(p, value) })
+}
+
 func (m *Manager) PlayerMessage(playerID uint64, message string) {
 	_ = m.playerUpdate(playerID, func(p *player.Player) { p.Message(message) })
 }

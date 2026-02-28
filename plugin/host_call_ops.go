@@ -1,0 +1,26 @@
+package plugin
+
+const (
+	hostCallBlockNames uint32 = iota + 1
+	hostCallItemNames
+	hostCallWorldNames
+
+	hostCallPlayerMainHandItemGet
+	hostCallPlayerMainHandItemSet
+	hostCallPlayerOffHandItemGet
+	hostCallPlayerOffHandItemSet
+
+	hostCallPlayerInventoryItemsGet
+	hostCallPlayerInventoryItemsSet
+	hostCallPlayerEnderChestItemsGet
+	hostCallPlayerEnderChestItemsSet
+	hostCallPlayerArmourItemsGet
+	hostCallPlayerArmourItemsSet
+
+	hostCallPlayerSetHeldSlot
+	hostCallPlayerMoveItemsToInventory
+	hostCallPlayerCloseForm
+	hostCallPlayerCloseDialogue
+	hostCallPlayerSendMenuForm
+	hostCallPlayerSendModalForm
+)

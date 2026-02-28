@@ -21,8 +21,13 @@ const (
 	LecternNewPage uint32 = 17
 	ItemDamageAmount uint32 = 18
 	ItemPickupCount uint32 = 19
-	TransferAddr uint32 = 20
-	JoinCancelMessage uint32 = 21
+	ItemDropCount uint32 = 20
+	ItemDropHasItem uint32 = 21
+	ItemDropName uint32 = 22
+	ItemDropMeta uint32 = 23
+	ItemDropCustomName uint32 = 24
+	TransferAddr uint32 = 25
+	JoinCancelMessage uint32 = 26
 )
 
 var byName = map[string]uint32{
@@ -45,6 +50,11 @@ var byName = map[string]uint32{
 	"lectern.new_page": LecternNewPage,
 	"item.damage_amount": ItemDamageAmount,
 	"item.pickup_count": ItemPickupCount,
+	"item.drop_count": ItemDropCount,
+	"item.drop_has_item": ItemDropHasItem,
+	"item.drop_name": ItemDropName,
+	"item.drop_meta": ItemDropMeta,
+	"item.drop_custom_name": ItemDropCustomName,
 	"transfer.addr": TransferAddr,
 	"join.cancel_message": JoinCancelMessage,
 }

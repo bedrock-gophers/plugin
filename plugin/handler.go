@@ -317,7 +317,24 @@ func (h *Handler) HandleItemDrop(ctx *player.Context, s item.Stack) {
 	enc := newPayload(96)
 	encodeItemStack(enc, s)
 	mutable := newMutableState(ctx.Cancel)
+	original := itemStackData(s)
+	mutated := original
+	mutable.AddI64(ctxkey.ItemDropCount, int64(mutated.Count), func(v int64) { mutated.Count = int32(v) })
+	mutable.AddBool(ctxkey.ItemDropHasItem, mutated.HasItem, func(v bool) { mutated.HasItem = v })
+	mutable.AddString(ctxkey.ItemDropName, mutated.ItemName, func(v string) { mutated.ItemName = v })
+	mutable.AddI64(ctxkey.ItemDropMeta, int64(mutated.ItemMeta), func(v int64) { mutated.ItemMeta = int32(v) })
+	mutable.AddString(ctxkey.ItemDropCustomName, mutated.CustomName, func(v string) { mutated.CustomName = v })
 	h.m.dispatch(ctx.Val(), abi.EventItemDrop, abi.FlagCancellable, enc.Data(), mutable)
+	if mutable.Cancelled() || mutated == original {
+		return
+	}
+
+	replacement, ok := itemStackFromData(mutated)
+	if !ok {
+		return
+	}
+	ctx.Cancel()
+	ctx.Val().Drop(replacement)
 }
 
 func (h *Handler) HandleTransfer(ctx *player.Context, addr *net.UDPAddr) {

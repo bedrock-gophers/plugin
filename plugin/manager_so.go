@@ -961,6 +961,11 @@ func (m *Manager) dispatchToPlugin(plug *pluginRuntime, playerID uint64, eventID
 		if plug.csharp == nil {
 			return
 		}
+		requestKey := registerCSharpMutableState(plug.csharp.ctxID, mutable)
+		if requestKey != 0 {
+			desc.RequestKey = requestKey
+			defer unregisterCSharpMutableState(plug.csharp.ctxID, requestKey)
+		}
 		if err := plug.csharp.dispatch(m, plug, desc, payload); err != nil {
 			slog.Error("dispatch csharp plugin event", "plugin", plug.name, "event", abi.EventName(eventID), "err", err)
 		}

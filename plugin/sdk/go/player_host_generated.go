@@ -59,6 +59,22 @@ type playerHost interface {
 	PlayerWake(playerID uint64) bool
 	PlayerExtinguish(playerID uint64) bool
 	SetPlayerShowCoordinates(playerID uint64, value bool) bool
+	PlayerMainHandItem(playerID uint64) ItemStackData
+	SetPlayerMainHandItem(playerID uint64, stack ItemStackData) bool
+	PlayerOffHandItem(playerID uint64) ItemStackData
+	SetPlayerOffHandItem(playerID uint64, stack ItemStackData) bool
+	PlayerInventoryItems(playerID uint64) []ItemStackData
+	SetPlayerInventoryItems(playerID uint64, items []ItemStackData) bool
+	PlayerEnderChestItems(playerID uint64) []ItemStackData
+	SetPlayerEnderChestItems(playerID uint64, items []ItemStackData) bool
+	PlayerArmourItems(playerID uint64) []ItemStackData
+	SetPlayerArmourItems(playerID uint64, items []ItemStackData) bool
+	SetPlayerHeldSlot(playerID uint64, slot int32) bool
+	PlayerMoveItemsToInventory(playerID uint64) bool
+	PlayerCloseForm(playerID uint64) bool
+	PlayerCloseDialogue(playerID uint64) bool
+	PlayerSendMenuForm(playerID uint64, value MenuFormData) bool
+	PlayerSendModalForm(playerID uint64, value ModalFormData) bool
 	PlayerMessage(playerID uint64, message string)
 }
 
@@ -288,6 +304,70 @@ func playerExtinguish(playerID uint64) bool {
 
 func setPlayerShowCoordinates(playerID uint64, value bool) bool {
 	return hostBool(func(h Host) bool { return h.SetPlayerShowCoordinates(playerID, value) })
+}
+
+func playerMainHandItem(playerID uint64) ItemStackData {
+	return hostValue(ItemStackData{}, func(h Host) ItemStackData { return h.PlayerMainHandItem(playerID) })
+}
+
+func setPlayerMainHandItem(playerID uint64, stack ItemStackData) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerMainHandItem(playerID, stack) })
+}
+
+func playerOffHandItem(playerID uint64) ItemStackData {
+	return hostValue(ItemStackData{}, func(h Host) ItemStackData { return h.PlayerOffHandItem(playerID) })
+}
+
+func setPlayerOffHandItem(playerID uint64, stack ItemStackData) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerOffHandItem(playerID, stack) })
+}
+
+func playerInventoryItems(playerID uint64) []ItemStackData {
+	return hostValue(nil, func(h Host) []ItemStackData { return h.PlayerInventoryItems(playerID) })
+}
+
+func setPlayerInventoryItems(playerID uint64, items []ItemStackData) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerInventoryItems(playerID, items) })
+}
+
+func playerEnderChestItems(playerID uint64) []ItemStackData {
+	return hostValue(nil, func(h Host) []ItemStackData { return h.PlayerEnderChestItems(playerID) })
+}
+
+func setPlayerEnderChestItems(playerID uint64, items []ItemStackData) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerEnderChestItems(playerID, items) })
+}
+
+func playerArmourItems(playerID uint64) []ItemStackData {
+	return hostValue(nil, func(h Host) []ItemStackData { return h.PlayerArmourItems(playerID) })
+}
+
+func setPlayerArmourItems(playerID uint64, items []ItemStackData) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerArmourItems(playerID, items) })
+}
+
+func setPlayerHeldSlot(playerID uint64, slot int32) bool {
+	return hostBool(func(h Host) bool { return h.SetPlayerHeldSlot(playerID, slot) })
+}
+
+func playerMoveItemsToInventory(playerID uint64) bool {
+	return hostBool(func(h Host) bool { return h.PlayerMoveItemsToInventory(playerID) })
+}
+
+func playerCloseForm(playerID uint64) bool {
+	return hostBool(func(h Host) bool { return h.PlayerCloseForm(playerID) })
+}
+
+func playerCloseDialogue(playerID uint64) bool {
+	return hostBool(func(h Host) bool { return h.PlayerCloseDialogue(playerID) })
+}
+
+func playerSendMenuForm(playerID uint64, value MenuFormData) bool {
+	return hostBool(func(h Host) bool { return h.PlayerSendMenuForm(playerID, value) })
+}
+
+func playerSendModalForm(playerID uint64, value ModalFormData) bool {
+	return hostBool(func(h Host) bool { return h.PlayerSendModalForm(playerID, value) })
 }
 
 func playerMessage(playerID uint64, message string) {

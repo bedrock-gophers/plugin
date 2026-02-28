@@ -18,6 +18,8 @@ Supported source layouts:
 Environment overrides:
   PLUGIN_SRC_DIR      Source plugin directory (default: $PWD/plugins, fallback: cached repo ./plugins)
   HOST_REPO_URL       Host runtime repo URL (default: https://github.com/bedrock-gophers/plugin.git)
+  USE_LOCAL_HOST_WORKTREE Set to 1 to use the current working tree as host runtime source
+                      (default: 0, uses cached/fetched HOST_REPO_URL source)
   BRANCH              Optional git branch/tag to clone from HOST_REPO_URL
   COMMIT              Optional commit SHA to checkout after clone (takes precedence over BRANCH tip)
   HOST_REPO_CACHE_DIR Cached host repo directory (default: $TMP_BASE/host-repo-cache)
@@ -45,6 +47,7 @@ if [[ -n "${PLUGIN_SRC_DIR+x}" ]]; then
 fi
 PLUGIN_SRC_DIR="${PLUGIN_SRC_DIR:-$PWD/plugins}"
 HOST_REPO_URL="${HOST_REPO_URL:-https://github.com/bedrock-gophers/plugin.git}"
+USE_LOCAL_HOST_WORKTREE="${USE_LOCAL_HOST_WORKTREE:-0}"
 BRANCH="${BRANCH:-}"
 COMMIT="${COMMIT:-}"
 HOST_REPO_UPDATE="${HOST_REPO_UPDATE:-0}"
@@ -79,6 +82,12 @@ DOTNET_NUGET_CACHE_DIR="$TMP_BASE/dotnet-nuget-cache"
 HOST_REPO_CACHE_DIR="${HOST_REPO_CACHE_DIR:-$TMP_BASE/host-repo-cache}"
 PLUGIN_ARTIFACT_CACHE_DIR="${PLUGIN_ARTIFACT_CACHE_DIR:-$TMP_BASE/plugin-artifact-cache}"
 PLUGIN_SHA_CACHE_DIR="${PLUGIN_SHA_CACHE_DIR:-$TMP_BASE/plugin-sha-cache}"
+HOST_RUNTIME_ABI_SHA=""
+
+if [[ "$USE_LOCAL_HOST_WORKTREE" != "0" && "$USE_LOCAL_HOST_WORKTREE" != "1" ]]; then
+	echo "error: USE_LOCAL_HOST_WORKTREE must be 0 or 1 (got: $USE_LOCAL_HOST_WORKTREE)" >&2
+	exit 1
+fi
 
 if ! command -v git >/dev/null 2>&1; then
 	echo "error: git CLI not found. Install git first." >&2
@@ -127,6 +136,10 @@ host_path_for_docker() {
 }
 
 ensure_host_repo_cache() {
+	if [[ "$USE_LOCAL_HOST_WORKTREE" == "1" ]]; then
+		return
+	fi
+
 	if [[ -d "$HOST_REPO_CACHE_DIR/.git" ]]; then
 		local current_origin
 		current_origin="$(git -C "$HOST_REPO_CACHE_DIR" remote get-url origin 2>/dev/null || true)"
@@ -174,6 +187,25 @@ ensure_host_repo_cache() {
 
 prepare_host_repo() {
 	rm -rf "$HOST_REPO_DIR"
+	if [[ "$USE_LOCAL_HOST_WORKTREE" == "1" ]]; then
+		echo "using local host runtime source from working tree: $PWD"
+		if command -v rsync >/dev/null 2>&1; then
+			rsync -a --delete \
+				--exclude ".git" \
+				--exclude ".tmp" \
+				--exclude ".data" \
+				"$PWD"/ "$HOST_REPO_DIR"/
+		else
+			mkdir -p "$HOST_REPO_DIR"
+			cp -a "$PWD"/. "$HOST_REPO_DIR"/
+			rm -rf "$HOST_REPO_DIR/.git" "$HOST_REPO_DIR/.tmp" "$HOST_REPO_DIR/.data"
+		fi
+		local resolved_ref
+		resolved_ref="$(git -C "$PWD" rev-parse --short=12 HEAD 2>/dev/null || echo "worktree")"
+		echo "using host runtime source: local worktree ($resolved_ref)"
+		return
+	fi
+
 	echo "copying host runtime repo from cache"
 	git clone --quiet --no-hardlinks "$HOST_REPO_CACHE_DIR" "$HOST_REPO_DIR"
 
@@ -403,6 +435,34 @@ hash_file_sha256() {
 	fi
 }
 
+host_runtime_abi_sha() {
+	local digest_input=""
+	local found=0
+
+	while IFS= read -r -d '' source_file; do
+		found=1
+		local rel="${source_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$source_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done < <(find "$HOST_REPO_DIR/plugin" -type f -name '*.go' -print0 | sort -z)
+
+	for mod_file in "$HOST_REPO_DIR/go.mod" "$HOST_REPO_DIR/go.sum"; do
+		[[ -f "$mod_file" ]] || continue
+		found=1
+		local rel="${mod_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$mod_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done
+
+	if [[ "$found" -eq 0 ]]; then
+		printf ''
+		return
+	fi
+	printf '%s' "$digest_input" | hash_text_sha256
+}
+
 plugin_code_sha() {
 	local plugin_dir="$1"
 	local digest_input=""
@@ -605,6 +665,39 @@ CSPROJ
 	publish_csproj "/runtime/build/generated-cs/$plugin_name/$plugin_name.csproj" "$plugin_name" "$plugin_name"
 }
 
+ensure_csproj_exports() {
+	local plugin_dir="$1"
+	local generated_exports="$plugin_dir/__plugin_exports.generated.cs"
+
+	shopt -s nullglob
+	local cs_files=("$plugin_dir"/*.cs)
+	shopt -u nullglob
+
+	if [[ ${#cs_files[@]} -gt 0 ]] && rg -n 'EntryPoint\s*=\s*"PluginLoad"' "${cs_files[@]}" >/dev/null 2>&1; then
+		return
+	fi
+
+	cat > "$generated_exports" <<'CSWRAP'
+using BedrockPlugin.Sdk.Guest;
+using System.Runtime.InteropServices;
+
+namespace GeneratedPluginEntrypoint;
+
+public static unsafe class GeneratedPluginExports
+{
+    [UnmanagedCallersOnly(EntryPoint = "PluginLoad")]
+    public static int PluginLoad(NativeHostApi* hostApi, byte* pluginName) => NativePlugin.Load(hostApi, pluginName);
+
+    [UnmanagedCallersOnly(EntryPoint = "PluginUnload")]
+    public static void PluginUnload() => NativePlugin.Unload();
+
+    [UnmanagedCallersOnly(EntryPoint = "PluginDispatchEvent")]
+    public static void PluginDispatchEvent(ushort version, ushort eventId, uint flags, ulong playerId, ulong requestKey, byte* payload, uint payloadLen)
+        => NativePlugin.DispatchEvent(version, eventId, flags, playerId, requestKey, payload, payloadLen);
+}
+CSWRAP
+}
+
 compile_plugin_sources() {
 	shopt -s nullglob
 	local entries=("$PLUGIN_SRC_DIR"/*)
@@ -625,6 +718,9 @@ compile_plugin_sources() {
 		if [[ ${#go_files[@]} -gt 0 ]]; then
 			local go_sha
 			go_sha="$(plugin_code_sha "$entry")"
+			if [[ -n "$go_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+				go_sha="$(printf '%s\n%s\n' "$go_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+			fi
 			local go_target="$RUNTIME_PLUGIN_DIR/$name.so"
 			if [[ -n "$go_sha" ]] && restore_cached_plugin_artifact "go" "$name" "$go_sha" "$go_target"; then
 				echo "using cached Go plugin for $PLUGIN_SRC_REL/$name"
@@ -640,6 +736,7 @@ compile_plugin_sources() {
 		fi
 
 		if [[ ${#csproj_files[@]} -gt 0 ]]; then
+			ensure_csproj_exports "$entry"
 			local cs_sha
 			cs_sha="$(plugin_code_sha "$entry")"
 			for csproj in "${csproj_files[@]}"; do
@@ -769,6 +866,7 @@ declare -A SOURCE_GO_NAMES=()
 
 collect_source_go_plugin_names
 detect_prebuilt_go_toolchain
+HOST_RUNTIME_ABI_SHA="$(host_runtime_abi_sha)"
 compile_plugin_sources
 for so_path in "${BUILT_GO[@]}"; do
 	name="$(basename "${so_path%.so}")"

@@ -1,0 +1,27 @@
+namespace BedrockPlugin.Sdk.Abi;
+
+public static class HostCallOp
+{
+    public const uint BlockNames = 1;
+    public const uint ItemNames = 2;
+    public const uint WorldNames = 3;
+
+    public const uint PlayerMainHandItemGet = 4;
+    public const uint PlayerMainHandItemSet = 5;
+    public const uint PlayerOffHandItemGet = 6;
+    public const uint PlayerOffHandItemSet = 7;
+
+    public const uint PlayerInventoryItemsGet = 8;
+    public const uint PlayerInventoryItemsSet = 9;
+    public const uint PlayerEnderChestItemsGet = 10;
+    public const uint PlayerEnderChestItemsSet = 11;
+    public const uint PlayerArmourItemsGet = 12;
+    public const uint PlayerArmourItemsSet = 13;
+
+    public const uint PlayerSetHeldSlot = 14;
+    public const uint PlayerMoveItemsToInventory = 15;
+    public const uint PlayerCloseForm = 16;
+    public const uint PlayerCloseDialogue = 17;
+    public const uint PlayerSendMenuForm = 18;
+    public const uint PlayerSendModalForm = 19;
+}

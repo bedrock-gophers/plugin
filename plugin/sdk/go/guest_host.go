@@ -29,6 +29,9 @@ type Host interface {
 	ManagePlugins(action uint32, target string) ([]string, error)
 	ResolvePlayerByName(name string) uint64
 	OnlinePlayerNames() []string
+	BlockNames() []string
+	ItemNames() []string
+	WorldNames() []string
 	playerHost
 	ConsoleMessage(pluginName, message string)
 }

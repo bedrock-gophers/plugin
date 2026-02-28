@@ -162,6 +162,175 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
         return outValues;
     }
 
+    private byte[] HostCall(uint op, ReadOnlySpan<byte> payload)
+    {
+        if (_api->host_call == null)
+        {
+            return Array.Empty<byte>();
+        }
+
+        uint outLen = 0;
+        byte* outPtr;
+        if (payload.Length == 0)
+        {
+            outPtr = _api->host_call(_api->ctx, op, null, 0, &outLen);
+        }
+        else
+        {
+            var inBytes = payload.ToArray();
+            fixed (byte* inPtr = inBytes)
+            {
+                outPtr = _api->host_call(_api->ctx, op, inPtr, (uint)inBytes.Length, &outLen);
+            }
+        }
+        return ReadAndFreeBytes(outPtr, outLen);
+    }
+
+    private static bool DecodeBool(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0)
+        {
+            return false;
+        }
+        var d = new AbiDecoder(payload);
+        var value = d.Bool();
+        return d.Ok && value;
+    }
+
+    private static byte[] EncodePlayerPayload(ulong playerId)
+    {
+        var enc = new AbiEncoder(8);
+        enc.U64(playerId);
+        return enc.Data();
+    }
+
+    private static byte[] EncodePlayerSlotPayload(ulong playerId, int slot)
+    {
+        var enc = new AbiEncoder(12);
+        enc.U64(playerId);
+        enc.I32(slot);
+        return enc.Data();
+    }
+
+    private static void EncodeItemStack(AbiEncoder enc, ItemStackData value)
+    {
+        enc.I32(value.Count);
+        enc.Bool(value.HasItem);
+        enc.String(value.ItemName ?? string.Empty);
+        enc.I32(value.ItemMeta);
+        enc.String(value.CustomName ?? string.Empty);
+    }
+
+    private static ItemStackData DecodeItemStack(AbiDecoder d)
+    {
+        return new ItemStackData(
+            d.I32(),
+            d.Bool(),
+            d.String(),
+            d.I32(),
+            d.String());
+    }
+
+    private static byte[] EncodeItemStackPayload(ItemStackData stack)
+    {
+        var enc = new AbiEncoder(64);
+        EncodeItemStack(enc, stack);
+        return enc.Data();
+    }
+
+    private static byte[] EncodePlayerItemPayload(ulong playerId, ItemStackData stack)
+    {
+        var enc = new AbiEncoder(80);
+        enc.U64(playerId);
+        EncodeItemStack(enc, stack);
+        return enc.Data();
+    }
+
+    private static byte[] EncodePlayerItemsPayload(ulong playerId, IReadOnlyList<ItemStackData> items)
+    {
+        items ??= Array.Empty<ItemStackData>();
+        var enc = new AbiEncoder(16 + items.Count * 48);
+        enc.U64(playerId);
+        enc.U32((uint)items.Count);
+        for (var i = 0; i < items.Count; i++)
+        {
+            EncodeItemStack(enc, items[i]);
+        }
+        return enc.Data();
+    }
+
+    private static ItemStackData DecodeItemStackPayload(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0)
+        {
+            return new ItemStackData(0, false, string.Empty, 0, string.Empty);
+        }
+        var d = new AbiDecoder(payload);
+        var value = DecodeItemStack(d);
+        if (!d.Ok)
+        {
+            return new ItemStackData(0, false, string.Empty, 0, string.Empty);
+        }
+        return value;
+    }
+
+    private static IReadOnlyList<ItemStackData> DecodeItemStacksPayload(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0)
+        {
+            return Array.Empty<ItemStackData>();
+        }
+
+        var d = new AbiDecoder(payload);
+        var countRaw = d.U32();
+        if (!d.Ok || countRaw > int.MaxValue)
+        {
+            return Array.Empty<ItemStackData>();
+        }
+        var count = (int)countRaw;
+        if (count == 0)
+        {
+            return Array.Empty<ItemStackData>();
+        }
+
+        var outValues = new List<ItemStackData>(count);
+        for (var i = 0; i < count; i++)
+        {
+            outValues.Add(DecodeItemStack(d));
+        }
+        if (!d.Ok)
+        {
+            return Array.Empty<ItemStackData>();
+        }
+        return outValues;
+    }
+
+    private static byte[] EncodeMenuFormPayload(ulong playerId, MenuFormData value)
+    {
+        var buttons = value.Buttons ?? Array.Empty<string>();
+        var enc = new AbiEncoder(32 + buttons.Count * 16);
+        enc.U64(playerId);
+        enc.String(value.Title ?? string.Empty);
+        enc.String(value.Body ?? string.Empty);
+        enc.U32((uint)buttons.Count);
+        for (var i = 0; i < buttons.Count; i++)
+        {
+            enc.String(buttons[i] ?? string.Empty);
+        }
+        return enc.Data();
+    }
+
+    private static byte[] EncodeModalFormPayload(ulong playerId, ModalFormData value)
+    {
+        var enc = new AbiEncoder(96);
+        enc.U64(playerId);
+        enc.String(value.Title ?? string.Empty);
+        enc.String(value.Body ?? string.Empty);
+        enc.String(value.Confirm ?? string.Empty);
+        enc.String(value.Cancel ?? string.Empty);
+        return enc.Data();
+    }
+
     public bool RegisterCommand(string pluginName, string name, string description, IReadOnlyList<string> aliases, uint handlerId, IReadOnlyList<CommandOverloadSpec> overloads)
     {
         var pluginNameZ = Utf8Z(pluginName);
@@ -213,6 +382,21 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
         return DecodeStringList(payload);
     }
 
+    public IReadOnlyList<string> BlockNames()
+    {
+        return DecodeStringList(HostCall(HostCallOp.BlockNames, Array.Empty<byte>()));
+    }
+
+    public IReadOnlyList<string> ItemNames()
+    {
+        return DecodeStringList(HostCall(HostCallOp.ItemNames, Array.Empty<byte>()));
+    }
+
+    public IReadOnlyList<string> WorldNames()
+    {
+        return DecodeStringList(HostCall(HostCallOp.WorldNames, Array.Empty<byte>()));
+    }
+
     public void ConsoleMessage(string pluginName, string message)
     {
         var pluginNameZ = Utf8Z(pluginName);
@@ -221,6 +405,28 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
         fixed (byte* messagePtr = messageZ)
         {
             _api->console_message(_api->ctx, pluginNamePtr, messagePtr);
+        }
+    }
+
+    public bool EventCancel(ulong requestKey)
+    {
+        if (requestKey == 0 || _api->event_cancel == null)
+        {
+            return false;
+        }
+        return _api->event_cancel(_api->ctx, requestKey) != 0;
+    }
+
+    public bool EventSetItemDrop(ulong requestKey, ItemStackData stack)
+    {
+        if (requestKey == 0 || _api->event_item_drop_set == null)
+        {
+            return false;
+        }
+        var payload = EncodeItemStackPayload(stack);
+        fixed (byte* payloadPtr = payload)
+        {
+            return _api->event_item_drop_set(_api->ctx, requestKey, payloadPtr, (uint)payload.Length) != 0;
         }
     }
 
@@ -351,6 +557,86 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
     public bool PlayerExtinguish(ulong playerId) => _api->player_extinguish(_api->ctx, playerId) != 0;
 
     public bool SetPlayerShowCoordinates(ulong playerId, bool value) => _api->set_player_show_coordinates(_api->ctx, playerId, value ? 1 : 0) != 0;
+
+    public ItemStackData PlayerMainHandItem(ulong playerId)
+    {
+        return DecodeItemStackPayload(HostCall(HostCallOp.PlayerMainHandItemGet, EncodePlayerPayload(playerId)));
+    }
+
+    public bool SetPlayerMainHandItem(ulong playerId, ItemStackData stack)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerMainHandItemSet, EncodePlayerItemPayload(playerId, stack)));
+    }
+
+    public ItemStackData PlayerOffHandItem(ulong playerId)
+    {
+        return DecodeItemStackPayload(HostCall(HostCallOp.PlayerOffHandItemGet, EncodePlayerPayload(playerId)));
+    }
+
+    public bool SetPlayerOffHandItem(ulong playerId, ItemStackData stack)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerOffHandItemSet, EncodePlayerItemPayload(playerId, stack)));
+    }
+
+    public IReadOnlyList<ItemStackData> PlayerInventoryItems(ulong playerId)
+    {
+        return DecodeItemStacksPayload(HostCall(HostCallOp.PlayerInventoryItemsGet, EncodePlayerPayload(playerId)));
+    }
+
+    public bool SetPlayerInventoryItems(ulong playerId, IReadOnlyList<ItemStackData> items)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerInventoryItemsSet, EncodePlayerItemsPayload(playerId, items)));
+    }
+
+    public IReadOnlyList<ItemStackData> PlayerEnderChestItems(ulong playerId)
+    {
+        return DecodeItemStacksPayload(HostCall(HostCallOp.PlayerEnderChestItemsGet, EncodePlayerPayload(playerId)));
+    }
+
+    public bool SetPlayerEnderChestItems(ulong playerId, IReadOnlyList<ItemStackData> items)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerEnderChestItemsSet, EncodePlayerItemsPayload(playerId, items)));
+    }
+
+    public IReadOnlyList<ItemStackData> PlayerArmourItems(ulong playerId)
+    {
+        return DecodeItemStacksPayload(HostCall(HostCallOp.PlayerArmourItemsGet, EncodePlayerPayload(playerId)));
+    }
+
+    public bool SetPlayerArmourItems(ulong playerId, IReadOnlyList<ItemStackData> items)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerArmourItemsSet, EncodePlayerItemsPayload(playerId, items)));
+    }
+
+    public bool SetPlayerHeldSlot(ulong playerId, int slot)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerSetHeldSlot, EncodePlayerSlotPayload(playerId, slot)));
+    }
+
+    public bool PlayerMoveItemsToInventory(ulong playerId)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerMoveItemsToInventory, EncodePlayerPayload(playerId)));
+    }
+
+    public bool PlayerCloseForm(ulong playerId)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerCloseForm, EncodePlayerPayload(playerId)));
+    }
+
+    public bool PlayerCloseDialogue(ulong playerId)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerCloseDialogue, EncodePlayerPayload(playerId)));
+    }
+
+    public bool PlayerSendMenuForm(ulong playerId, MenuFormData value)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerSendMenuForm, EncodeMenuFormPayload(playerId, value)));
+    }
+
+    public bool PlayerSendModalForm(ulong playerId, ModalFormData value)
+    {
+        return DecodeBool(HostCall(HostCallOp.PlayerSendModalForm, EncodeModalFormPayload(playerId, value)));
+    }
 
     public void PlayerMessage(ulong playerId, string message)
     {

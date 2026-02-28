@@ -15,8 +15,13 @@ public interface IGuestHost
     ulong ResolvePlayerByName(string name);
 
     IReadOnlyList<string> OnlinePlayerNames();
+    IReadOnlyList<string> BlockNames();
+    IReadOnlyList<string> ItemNames();
+    IReadOnlyList<string> WorldNames();
 
     void ConsoleMessage(string pluginName, string message);
+    bool EventCancel(ulong requestKey);
+    bool EventSetItemDrop(ulong requestKey, ItemStackData stack);
 
     double PlayerHealth(ulong playerId);
     bool SetPlayerHealth(ulong playerId, double health);
@@ -75,5 +80,21 @@ public interface IGuestHost
     bool PlayerWake(ulong playerId);
     bool PlayerExtinguish(ulong playerId);
     bool SetPlayerShowCoordinates(ulong playerId, bool value);
+    ItemStackData PlayerMainHandItem(ulong playerId);
+    bool SetPlayerMainHandItem(ulong playerId, ItemStackData stack);
+    ItemStackData PlayerOffHandItem(ulong playerId);
+    bool SetPlayerOffHandItem(ulong playerId, ItemStackData stack);
+    IReadOnlyList<ItemStackData> PlayerInventoryItems(ulong playerId);
+    bool SetPlayerInventoryItems(ulong playerId, IReadOnlyList<ItemStackData> items);
+    IReadOnlyList<ItemStackData> PlayerEnderChestItems(ulong playerId);
+    bool SetPlayerEnderChestItems(ulong playerId, IReadOnlyList<ItemStackData> items);
+    IReadOnlyList<ItemStackData> PlayerArmourItems(ulong playerId);
+    bool SetPlayerArmourItems(ulong playerId, IReadOnlyList<ItemStackData> items);
+    bool SetPlayerHeldSlot(ulong playerId, int slot);
+    bool PlayerMoveItemsToInventory(ulong playerId);
+    bool PlayerCloseForm(ulong playerId);
+    bool PlayerCloseDialogue(ulong playerId);
+    bool PlayerSendMenuForm(ulong playerId, MenuFormData value);
+    bool PlayerSendModalForm(ulong playerId, ModalFormData value);
     void PlayerMessage(ulong playerId, string message);
 }

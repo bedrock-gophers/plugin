@@ -84,6 +84,8 @@ func (baseEvents) HandleEvent(fn any) {
 			eventChoice{name: "item consume", hints: []string{"itemconsume"}, register: func() { registerItemConsume(h) }},
 			eventChoice{name: "item drop", hints: []string{"itemdrop"}, register: func() { registerItemDrop(h) }},
 		)
+	case func(ev *Event, item MutableItemStack):
+		registerItemDropMutable(h)
 	case func(ev *Event, ent EntityData, force MutableArgument[float64], height MutableArgument[float64], critical MutableArgument[bool]):
 		registerAttackEntity(h)
 	case func(ev *Event, amount MutableArgument[int]):
@@ -362,6 +364,19 @@ func registerHeldSlotChange(fn func(ev *Event, from, to int32)) {
 func registerItemDrop(fn func(ev *Event, item ItemStackData)) {
 	handle(abi.EventItemDrop, func(ev *Event) {
 		fn(ev, decodeItemStack(ev.Decoder()))
+	})
+}
+
+func registerItemDropMutable(fn func(ev *Event, item MutableItemStack)) {
+	handle(abi.EventItemDrop, func(ev *Event) {
+		_ = decodeItemStack(ev.Decoder())
+		fn(ev, MutableItemStack{
+			Count:      mutableInt(ev, ctxkey.ItemDropCount),
+			HasItem:    mutableBool(ev, ctxkey.ItemDropHasItem),
+			ItemName:   mutableString(ev, ctxkey.ItemDropName),
+			ItemMeta:   mutableInt(ev, ctxkey.ItemDropMeta),
+			CustomName: mutableString(ev, ctxkey.ItemDropCustomName),
+		})
 	})
 }
 

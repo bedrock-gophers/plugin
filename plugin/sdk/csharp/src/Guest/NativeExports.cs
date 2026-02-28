@@ -1,9 +1,8 @@
-using BedrockPlugin.Sdk.Guest;
 using System.Runtime.InteropServices;
 
-namespace BedrockPlugin.Examples.PingPlugin;
+namespace BedrockPlugin.Sdk.Guest;
 
-public static unsafe class Exports
+public static unsafe class NativeExports
 {
     [UnmanagedCallersOnly(EntryPoint = "PluginLoad")]
     public static int PluginLoad(NativeHostApi* hostApi, byte* pluginName)

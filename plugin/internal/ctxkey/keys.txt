@@ -18,5 +18,10 @@ SleepSendReminder sleep.send_reminder
 LecternNewPage lectern.new_page
 ItemDamageAmount item.damage_amount
 ItemPickupCount item.pickup_count
+ItemDropCount item.drop_count
+ItemDropHasItem item.drop_has_item
+ItemDropName item.drop_name
+ItemDropMeta item.drop_meta
+ItemDropCustomName item.drop_custom_name
 TransferAddr transfer.addr
 JoinCancelMessage join.cancel_message

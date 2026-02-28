@@ -53,6 +53,8 @@ public sealed class CommandContext
 public sealed class EventContext
 {
     private readonly Plugin _plugin;
+    private bool _cancelRequested;
+    private MutableArgument<ItemStackData>? _itemDrop;
 
     internal EventContext(Plugin plugin, EventDescriptor descriptor)
     {
@@ -92,6 +94,32 @@ public sealed class EventContext
     public void Messagef(string format, params object?[] args)
     {
         Message(TextFormat.Colourf(format, args));
+    }
+
+    public void Cancel()
+    {
+        _cancelRequested = true;
+    }
+
+    internal MutableArgument<ItemStackData> MutableItemDrop(ItemStackData original)
+    {
+        _itemDrop ??= new MutableArgument<ItemStackData>(original);
+        return _itemDrop;
+    }
+
+    internal void CommitMutable()
+    {
+        if (Descriptor.RequestKey != 0)
+        {
+            if (_itemDrop is not null && _itemDrop.IsChanged)
+            {
+                _plugin.Host.EventSetItemDrop(Descriptor.RequestKey, _itemDrop.Value);
+            }
+            if (_cancelRequested && (Descriptor.Flags & AbiConstants.FlagCancellable) != 0)
+            {
+                _plugin.Host.EventCancel(Descriptor.RequestKey);
+            }
+        }
     }
 }
 
@@ -272,6 +300,7 @@ public class Plugin
                 Host.ConsoleMessage(Name, $"event handler panicked for {EventIds.EventName(descriptor.EventId)}: {ex.Message}");
             }
         }
+        ctx.CommitMutable();
     }
 
     public bool TryPlayerByName(string name, out PlayerRef? player)
@@ -295,6 +324,21 @@ public class Plugin
     public IReadOnlyList<string> OnlinePlayerNames()
     {
         return Host.OnlinePlayerNames().ToArray();
+    }
+
+    public IReadOnlyList<string> BlockNames()
+    {
+        return Host.BlockNames().ToArray();
+    }
+
+    public IReadOnlyList<string> ItemNames()
+    {
+        return Host.ItemNames().ToArray();
+    }
+
+    public IReadOnlyList<string> WorldNames()
+    {
+        return Host.WorldNames().ToArray();
     }
 
     public IReadOnlyList<string> ListPlugins()
@@ -390,6 +434,21 @@ public class Plugin
     {
         var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
+        if (spec.EventId == EventIds.EventItemDrop)
+        {
+            var mutableItemDropMethod = GetType().GetMethod(
+                spec.MethodName,
+                flags,
+                binder: null,
+                types: new[] { typeof(EventContext), typeof(MutableArgument<ItemStackData>) },
+                modifiers: null);
+            if (mutableItemDropMethod is not null && mutableItemDropMethod.ReturnType == typeof(void))
+            {
+                HandleEvent(spec.EventId, CreateMutableItemDropConvention(spec, mutableItemDropMethod));
+                return true;
+            }
+        }
+
         var payloadMethod = GetType().GetMethod(
             spec.MethodName,
             flags,
@@ -458,6 +517,25 @@ public class Plugin
             try
             {
                 method.Invoke(this, new object?[] { ctx, payload });
+            }
+            catch (Exception ex)
+            {
+                throw UnwrapInvocationException(ex);
+            }
+        };
+    }
+
+    private Action<EventContext, IEventPayload> CreateMutableItemDropConvention(ConventionSpec spec, MethodInfo method)
+    {
+        return (ctx, payload) =>
+        {
+            if (!spec.PayloadType.IsInstanceOfType(payload) || payload is not ItemDropPayload itemDrop)
+            {
+                return;
+            }
+            try
+            {
+                method.Invoke(this, new object?[] { ctx, ctx.MutableItemDrop(itemDrop.Item) });
             }
             catch (Exception ex)
             {

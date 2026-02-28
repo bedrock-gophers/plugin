@@ -12,6 +12,9 @@ public unsafe struct NativeHostApi
     public delegate* unmanaged<nuint, byte*, ulong> resolve_player_by_name;
     public delegate* unmanaged<nuint, uint*, byte*> online_player_names;
     public delegate* unmanaged<nuint, byte*, byte*, void> console_message;
+    public delegate* unmanaged<nuint, uint, byte*, uint, uint*, byte*> host_call;
+    public delegate* unmanaged<nuint, ulong, int> event_cancel;
+    public delegate* unmanaged<nuint, ulong, byte*, uint, int> event_item_drop_set;
 
     public delegate* unmanaged<nuint, ulong, double> player_health;
     public delegate* unmanaged<nuint, ulong, double, int> set_player_health;
