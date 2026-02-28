@@ -1,3 +1,0 @@
-/tmp/ping_aot/PingPlugin.so
-/tmp/ping_aot/PingPlugin.pdb
-/tmp/ping_aot/BedrockPlugin.Abi.pdb

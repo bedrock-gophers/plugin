@@ -1,3 +1,0 @@
-/workspace/plugins/csharp/PingPlugin/PingPlugin.so
-/workspace/plugins/csharp/PingPlugin/PingPlugin.pdb
-/workspace/plugins/csharp/PingPlugin/BedrockPlugin.Abi.pdb

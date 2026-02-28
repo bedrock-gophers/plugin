@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "/workspace/plugins/csharp/PingPlugin.csproj": {}
+    "/home/danick/projects/plugin/plugins/csharp/PingPlugin.csproj": {}
   },
   "projects": {
-    "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj": {
+    "/home/danick/projects/plugin/plugin/sdk/csharp/BedrockPlugin.Abi.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj",
+        "projectUniqueName": "/home/danick/projects/plugin/plugin/sdk/csharp/BedrockPlugin.Abi.csproj",
         "projectName": "BedrockPlugin.Abi",
-        "projectPath": "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj",
-        "packagesPath": "/root/.nuget/packages/",
-        "outputPath": "/workspace/plugin/sdk/csharp/obj/",
+        "projectPath": "/home/danick/projects/plugin/plugin/sdk/csharp/BedrockPlugin.Abi.csproj",
+        "packagesPath": "/home/danick/.nuget/packages/",
+        "outputPath": "/home/danick/projects/plugin/plugin/sdk/csharp/obj/",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/root/.nuget/NuGet/NuGet.Config"
+          "/home/danick/.nuget/NuGet/NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
@@ -37,25 +37,12 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        }
+        },
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
-          "dependencies": {
-            "Microsoft.DotNet.ILCompiler": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.24, )",
-              "autoReferenced": true
-            },
-            "Microsoft.NET.ILLink.Tasks": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.24, )",
-              "autoReferenced": true
-            }
-          },
           "imports": [
             "net461",
             "net462",
@@ -69,15 +56,11 @@
           "warn": true,
           "downloadDependencies": [
             {
-              "name": "Microsoft.AspNetCore.App.Runtime.linux-x64",
+              "name": "Microsoft.AspNetCore.App.Ref",
               "version": "[8.0.24, 8.0.24]"
             },
             {
-              "name": "Microsoft.NETCore.App.Runtime.linux-x64",
-              "version": "[8.0.24, 8.0.24]"
-            },
-            {
-              "name": "runtime.linux-x64.Microsoft.DotNet.ILCompiler",
+              "name": "Microsoft.NETCore.App.Ref",
               "version": "[8.0.24, 8.0.24]"
             }
           ],
@@ -86,26 +69,21 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.418/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "linux-x64": {
-          "#import": []
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.103/PortableRuntimeIdentifierGraph.json"
         }
       }
     },
-    "/workspace/plugins/csharp/PingPlugin.csproj": {
+    "/home/danick/projects/plugin/plugins/csharp/PingPlugin.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/workspace/plugins/csharp/PingPlugin.csproj",
+        "projectUniqueName": "/home/danick/projects/plugin/plugins/csharp/PingPlugin.csproj",
         "projectName": "PingPlugin",
-        "projectPath": "/workspace/plugins/csharp/PingPlugin.csproj",
-        "packagesPath": "/root/.nuget/packages/",
-        "outputPath": "/workspace/plugins/csharp/obj/",
+        "projectPath": "/home/danick/projects/plugin/plugins/csharp/PingPlugin.csproj",
+        "packagesPath": "/home/danick/.nuget/packages/",
+        "outputPath": "/home/danick/projects/plugin/plugins/csharp/obj/",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/root/.nuget/NuGet/NuGet.Config"
+          "/home/danick/.nuget/NuGet/NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
@@ -117,8 +95,8 @@
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj": {
-                "projectPath": "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj"
+              "/home/danick/projects/plugin/plugin/sdk/csharp/BedrockPlugin.Abi.csproj": {
+                "projectPath": "/home/danick/projects/plugin/plugin/sdk/csharp/BedrockPlugin.Abi.csproj"
               }
             }
           }
@@ -132,7 +110,8 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        }
+        },
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
@@ -164,11 +143,11 @@
           "warn": true,
           "downloadDependencies": [
             {
-              "name": "Microsoft.AspNetCore.App.Runtime.linux-x64",
+              "name": "Microsoft.AspNetCore.App.Ref",
               "version": "[8.0.24, 8.0.24]"
             },
             {
-              "name": "Microsoft.NETCore.App.Runtime.linux-x64",
+              "name": "Microsoft.NETCore.App.Ref",
               "version": "[8.0.24, 8.0.24]"
             },
             {
@@ -181,12 +160,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.418/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "linux-x64": {
-          "#import": []
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.103/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

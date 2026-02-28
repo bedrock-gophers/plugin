@@ -24,7 +24,6 @@ func main() {
 	conf.Allower = allower
 
 	srv := conf.New()
-	srv.CloseOnProgramEnd()
 
 	pluginDir := strings.TrimSpace(os.Getenv("PLUGIN_DIR"))
 	if pluginDir == "" {
@@ -39,16 +38,17 @@ func main() {
 		panic(err)
 	}
 	allower.SetManager(mgr)
-	defer func() {
-		if closeErr := mgr.Close(context.Background()); closeErr != nil {
-			slog.Error("close plugin manager", "err", closeErr)
-		}
-	}()
+	shutdown := newShutdownController(srv, mgr)
+	defer shutdown.Shutdown("main exit")
+
+	watchForShutdownSignals(shutdown)
+	go runConsoleLoop(shutdown, srv)
 
 	srv.Listen()
 	for p := range srv.Accept() {
 		mgr.Attach(p)
 	}
+	shutdown.Shutdown("server accept loop ended")
 }
 
 func config(log *slog.Logger) (server.Config, error) {

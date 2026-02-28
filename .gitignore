@@ -1,3 +1,5 @@
 plugins/*.so
 .data/
 .tmp/
+bin/
+obj/

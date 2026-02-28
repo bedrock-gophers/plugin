@@ -1,3 +1,0 @@
-/tmp/pingout/PingPlugin.so
-/tmp/pingout/PingPlugin.pdb
-/tmp/pingout/BedrockPlugin.Abi.pdb

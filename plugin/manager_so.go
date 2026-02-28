@@ -47,6 +47,8 @@ type Manager struct {
 	registeringPlugin *pluginRuntime
 
 	players *playerStore
+
+	closeOnce sync.Once
 }
 
 func Load(ctx context.Context, srv *server.Server, dirPath string) (*Manager, error) {
@@ -78,12 +80,14 @@ func Load(ctx context.Context, srv *server.Server, dirPath string) (*Manager, er
 }
 
 func (m *Manager) Close(context.Context) error {
-	m.cancel()
-	plugins := m.loadedPluginsSnapshot()
-	for _, plug := range plugins {
-		m.deactivatePlugin(plug)
-	}
-	guest.SetHost(nil)
+	m.closeOnce.Do(func() {
+		m.cancel()
+		plugins := m.loadedPluginsSnapshot()
+		for i := len(plugins) - 1; i >= 0; i-- {
+			m.deactivatePlugin(plugins[i])
+		}
+		guest.SetHost(nil)
+	})
 	return nil
 }
 
@@ -351,7 +355,9 @@ func (m *Manager) unloadAll() ([]string, error) {
 	names := make([]string, 0, len(plugins))
 	for _, plug := range plugins {
 		names = append(names, plug.name)
-		m.deactivatePlugin(plug)
+	}
+	for i := len(plugins) - 1; i >= 0; i-- {
+		m.deactivatePlugin(plugins[i])
 	}
 	sort.Strings(names)
 	return names, nil
@@ -687,8 +693,9 @@ func (m *Manager) deactivatePlugin(plug *pluginRuntime) {
 		}
 	}
 	m.pluginsMu.Unlock()
-	callPluginUnload(plug)
 	m.unregisterPluginCommandsFor(plug)
+	callPluginUnload(plug)
+	slog.Info("plugin unloaded", "name", plug.name, "path", plug.path)
 }
 
 func (m *Manager) activatePluginCommands(plug *pluginRuntime) error {
