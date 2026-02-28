@@ -1,0 +1,3 @@
+/runtime/build/csharp/csharp/PingPlugin/PingPlugin.so
+/runtime/build/csharp/csharp/PingPlugin/PingPlugin.pdb
+/runtime/build/csharp/csharp/PingPlugin/BedrockPlugin.Abi.pdb

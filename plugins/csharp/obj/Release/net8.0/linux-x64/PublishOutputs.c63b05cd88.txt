@@ -1,0 +1,3 @@
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/PingPlugin.so
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/PingPlugin.pdb
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/BedrockPlugin.Abi.pdb

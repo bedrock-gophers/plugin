@@ -1,0 +1,5 @@
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/PingPlugin.dll
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/PingPlugin.deps.json
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/PingPlugin.pdb
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/BedrockPlugin.Abi.dll
+/home/danick/projects/plugin/plugins/csharp/PingPlugin/BedrockPlugin.Abi.pdb

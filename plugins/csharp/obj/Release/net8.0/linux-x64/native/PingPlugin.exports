@@ -1,0 +1,8 @@
+V1.0 {
+    global: _init; _fini;
+        DotNetRuntimeDebugHeader;
+        PluginLoad;
+        PluginUnload;
+        PluginDispatchEvent;
+    local: *;
+};

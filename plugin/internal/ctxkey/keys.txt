@@ -1,0 +1,22 @@
+# <ConstName> <key>
+ChatMessage chat.message
+FoodTo food.to
+HealAmount heal.amount
+HurtDamage hurt.damage
+HurtAttackImmunityMillis hurt.attack_immunity_millis
+DeathKeepInventory death.keep_inventory
+RespawnPosX respawn.pos_x
+RespawnPosY respawn.pos_y
+RespawnPosZ respawn.pos_z
+RespawnWorldName respawn.world_name
+BlockBreakXP block_break.xp
+AttackForce attack.force
+AttackHeight attack.height
+AttackCritical attack.critical
+ExperienceAmount experience.amount
+SleepSendReminder sleep.send_reminder
+LecternNewPage lectern.new_page
+ItemDamageAmount item.damage_amount
+ItemPickupCount item.pickup_count
+TransferAddr transfer.addr
+JoinCancelMessage join.cancel_message

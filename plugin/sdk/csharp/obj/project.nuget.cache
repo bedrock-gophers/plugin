@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "GAri3JQu8b0=",
+  "success": true,
+  "projectFilePath": "/workspace/plugin/sdk/csharp/BedrockPlugin.Abi.csproj",
+  "expectedPackageFiles": [
+    "/root/.nuget/packages/microsoft.dotnet.ilcompiler/8.0.24/microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.net.illink.tasks/8.0.24/microsoft.net.illink.tasks.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/8.0.24/runtime.linux-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.netcore.app.runtime.linux-x64/8.0.24/microsoft.netcore.app.runtime.linux-x64.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.aspnetcore.app.runtime.linux-x64/8.0.24/microsoft.aspnetcore.app.runtime.linux-x64.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/8.0.24/runtime.linux-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512"
+  ],
+  "logs": []
+}
