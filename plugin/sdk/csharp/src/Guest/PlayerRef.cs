@@ -141,6 +141,10 @@ public sealed class PlayerRef
 
     public bool Dead() => HostBool(h => h.PlayerDead(Id));
 
+    public long LatencyMillis() => HostValue(0L, h => h.PlayerLatencyMillis(Id));
+
+    public TimeSpan Latency() => TimeSpan.FromMilliseconds(Math.Max(0L, LatencyMillis()));
+
     public bool SetOnFireMillis(long millis) => HostBool(h => h.SetPlayerOnFireMillis(Id, millis));
 
     public bool AddFood(int points) => HostBool(h => h.AddPlayerFood(Id, points));

@@ -24,4 +24,5 @@ public static class HostCallOp
     public const uint PlayerCloseDialogue = 17;
     public const uint PlayerSendMenuForm = 18;
     public const uint PlayerSendModalForm = 19;
+    public const uint PlayerLatencyMillis = 20;
 }

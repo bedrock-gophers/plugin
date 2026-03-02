@@ -16,6 +16,9 @@ const (
 	pluginCommandParamText
 	pluginCommandParamEnum
 	pluginCommandParamSubcommand
+	pluginCommandParamPluginAvailable
+	pluginCommandParamPluginLoaded
+	pluginCommandParamTarget
 )
 
 type pluginCommandParamSpec struct {
@@ -80,6 +83,11 @@ func (r pluginCommandRunnable) DescribeParams(cmd.Source) []cmd.ParamInfo {
 			}
 		case pluginCommandParamSubcommand:
 			value = cmd.SubCommand{}
+		case pluginCommandParamTarget:
+			value = pluginCommandEnum{
+				typ:     pluginEnumTypeName(r.entry.name, param.name),
+				resolve: r.targetOptions,
+			}
 		}
 		out = append(out, cmd.ParamInfo{
 			Name:     param.name,
@@ -90,16 +98,27 @@ func (r pluginCommandRunnable) DescribeParams(cmd.Source) []cmd.ParamInfo {
 	return out
 }
 
+func (r pluginCommandRunnable) targetOptions(cmd.Source) []string {
+	if r.manager == nil {
+		return nil
+	}
+	return r.manager.commandTargetNames()
+}
+
 type pluginCommandEnum struct {
 	typ     string
 	options []string
+	resolve func(cmd.Source) []string
 }
 
 func (e pluginCommandEnum) Type() string {
 	return e.typ
 }
 
-func (e pluginCommandEnum) Options(cmd.Source) []string {
+func (e pluginCommandEnum) Options(src cmd.Source) []string {
+	if e.resolve != nil {
+		return append([]string(nil), e.resolve(src)...)
+	}
 	return append([]string(nil), e.options...)
 }
 

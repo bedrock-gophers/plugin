@@ -72,6 +72,7 @@ public interface IGuestHost
     bool PlayerImmobile(ulong playerId);
     bool SetPlayerImmobile(ulong playerId, bool value);
     bool PlayerDead(ulong playerId);
+    long PlayerLatencyMillis(ulong playerId);
     bool SetPlayerOnFireMillis(ulong playerId, long millis);
     bool AddPlayerFood(ulong playerId, int points);
     bool PlayerUseItem(ulong playerId);

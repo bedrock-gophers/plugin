@@ -125,6 +125,10 @@ public sealed class EventContext
 
 public class Plugin
 {
+    private sealed record CommandHandlerRegistration(
+        Func<CommandContext, bool>? Allow,
+        Action<CommandContext, IReadOnlyList<string>> Run);
+
     private sealed record ConventionSpec(
         ushort EventId,
         string MethodName,
@@ -173,7 +177,7 @@ public class Plugin
         new(EventIds.EventPluginCommand, "OnPluginCommand", typeof(PluginCommandPayload)),
     };
 
-    private readonly Dictionary<uint, Action<CommandContext, IReadOnlyList<string>>> _commandHandlers = new();
+    private readonly Dictionary<uint, CommandHandlerRegistration> _commandHandlers = new();
     private readonly Dictionary<ushort, List<Action<EventContext, IEventPayload>>> _eventHandlers = new();
     private bool _conventionHandlersRegistered;
     private uint _nextCommandHandlerId = 1;
@@ -200,7 +204,26 @@ public class Plugin
             throw new ArgumentNullException(nameof(run));
         }
 
-        RegisterCommand(name, description, aliases, Array.Empty<CommandOverloadSpec>(), (ctx, _) => run(ctx));
+        RegisterCommand(name, description, aliases, Array.Empty<CommandOverloadSpec>(), allow: null, (ctx, _) => run(ctx));
+    }
+
+    public void RegisterCommand(
+        string name,
+        string description,
+        IReadOnlyList<string>? aliases,
+        Func<CommandContext, bool> allow,
+        Action<CommandContext> run)
+    {
+        if (allow is null)
+        {
+            throw new ArgumentNullException(nameof(allow));
+        }
+        if (run is null)
+        {
+            throw new ArgumentNullException(nameof(run));
+        }
+
+        RegisterCommand(name, description, aliases, Array.Empty<CommandOverloadSpec>(), allow, (ctx, _) => run(ctx));
     }
 
     public void RegisterCommand(
@@ -208,6 +231,17 @@ public class Plugin
         string description,
         IReadOnlyList<string>? aliases,
         IReadOnlyList<CommandOverloadSpec>? overloads,
+        Action<CommandContext, IReadOnlyList<string>> run)
+    {
+        RegisterCommand(name, description, aliases, overloads, allow: null, run);
+    }
+
+    public void RegisterCommand(
+        string name,
+        string description,
+        IReadOnlyList<string>? aliases,
+        IReadOnlyList<CommandOverloadSpec>? overloads,
+        Func<CommandContext, bool>? allow,
         Action<CommandContext, IReadOnlyList<string>> run)
     {
         if (run is null)
@@ -226,7 +260,7 @@ public class Plugin
         var normalizedOverloads = overloads is null ? Array.Empty<CommandOverloadSpec>() : overloads.ToArray();
 
         var handlerId = _nextCommandHandlerId++;
-        _commandHandlers[handlerId] = run;
+        _commandHandlers[handlerId] = new CommandHandlerRegistration(allow, run);
 
         if (Host.RegisterCommand(Name, normalizedName, normalizedDescription, normalizedAliases, handlerId, normalizedOverloads))
         {
@@ -373,16 +407,36 @@ public class Plugin
 
     private void DispatchCommand(ulong playerId, PluginCommandPayload payload)
     {
-        if (!_commandHandlers.TryGetValue(payload.HandlerId, out var run))
+        if (!_commandHandlers.TryGetValue(payload.HandlerId, out var registration))
         {
             return;
         }
 
         var rawArgs = payload.Args.ToArray();
         var ctx = new CommandContext(this, playerId, rawArgs);
+        if (registration.Allow is not null)
+        {
+            bool allowed;
+            try
+            {
+                allowed = registration.Allow(ctx);
+            }
+            catch (Exception ex)
+            {
+                ctx.Messagef("<red>command permission check failed: {0}</red>", ex.Message);
+                return;
+            }
+
+            if (!allowed)
+            {
+                ctx.Message("you are not allowed to use this command");
+                return;
+            }
+        }
+
         try
         {
-            run(ctx, rawArgs);
+            registration.Run(ctx, rawArgs);
         }
         catch (Exception ex)
         {

@@ -89,6 +89,12 @@ func (m *Manager) SetPlayerOnFireMillis(playerID uint64, millis int64) bool {
 	})
 }
 
+func (m *Manager) PlayerLatencyMillis(playerID uint64) int64 {
+	return playerValue(m, playerID, int64(0), func(p *player.Player) int64 {
+		return p.Latency().Milliseconds()
+	})
+}
+
 func (m *Manager) ConsoleMessage(pluginName, message string) {
 	if pluginName != "" {
 		slog.Info(message, "plugin", pluginName)
@@ -102,6 +108,9 @@ func (m *Manager) ResolvePlayerByName(name string) uint64 {
 	if name == "" {
 		return 0
 	}
+	if id := m.commandTargetID(name); id != 0 {
+		return id
+	}
 	id, _, ok := m.players.byName(name)
 	if !ok {
 		return 0
@@ -110,7 +119,7 @@ func (m *Manager) ResolvePlayerByName(name string) uint64 {
 }
 
 func (m *Manager) OnlinePlayerNames() []string {
-	return m.players.names()
+	return m.commandTargetNames()
 }
 
 func maxF64(a, b float64) float64 {

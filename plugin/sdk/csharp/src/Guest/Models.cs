@@ -81,12 +81,19 @@ public enum CommandParameterKind : byte
     Subcommand = 3,
     PluginAvailable = 4,
     PluginLoaded = 5,
+    Target = 6,
 }
 
 public sealed record CommandParameterSpec(
     string Name,
     CommandParameterKind Kind,
     bool Optional,
-    IReadOnlyList<string> EnumOptions);
+    IReadOnlyList<string> EnumOptions)
+{
+    public static CommandParameterSpec Target(string name = "target", bool optional = false)
+    {
+        return new(name, CommandParameterKind.Target, optional, Array.Empty<string>());
+    }
+}
 
 public sealed record CommandOverloadSpec(IReadOnlyList<CommandParameterSpec> Parameters);

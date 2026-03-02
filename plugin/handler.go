@@ -359,7 +359,9 @@ func (h *Handler) HandleCommandExecution(ctx *player.Context, command cmd.Comman
 }
 
 func (h *Handler) HandleQuit(p *player.Player) {
+	id := h.m.players.ensure(p)
 	h.m.dispatch(p, abi.EventQuit, 0, payloadPlayerIdentity(p), nil)
+	h.m.untrackPlayerCommandName(id, p)
 	h.m.players.remove(p)
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/df-mc/dragonfly/server/cmd"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 )
 
@@ -48,6 +49,11 @@ type Manager struct {
 
 	players *playerStore
 
+	commandNamesMu       sync.RWMutex
+	commandNameByID      map[uint64]string
+	commandPendingByXUID map[string]string
+	commandPendingByUUID map[string]string
+
 	closeOnce sync.Once
 }
 
@@ -67,6 +73,9 @@ func Load(ctx context.Context, srv *server.Server, dirPath string) (*Manager, er
 		pluginCommandsByAlias:  map[string]*pluginCommandRegistration{},
 		releasedCommandAliases: map[string]struct{}{},
 		players:                newPlayerStore(),
+		commandNameByID:        map[uint64]string{},
+		commandPendingByXUID:   map[string]string{},
+		commandPendingByUUID:   map[string]string{},
 	}
 	m.handler = &Handler{m: m}
 	guest.SetHost(m)
@@ -142,11 +151,29 @@ func (m *Manager) Attach(p *player.Player) {
 	if p == nil {
 		return
 	}
-	m.players.ensure(p)
+	id := m.players.ensure(p)
+	m.trackPlayerCommandName(id, p)
 	p.Handle(m.handler)
 }
 
 func (m *Manager) AllowJoin(_ net.Addr, d login.IdentityData, _ login.ClientData) (string, bool) {
+	xuidKey := normalizePlayerKey(d.XUID)
+	uuidKey := normalizePlayerUUIDKey(d.Identity)
+	name := strings.TrimSpace(d.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(d.Identity)
+	}
+	if name != "" && (xuidKey != "" || uuidKey != "") {
+		m.commandNamesMu.Lock()
+		if xuidKey != "" {
+			m.commandPendingByXUID[xuidKey] = name
+		}
+		if uuidKey != "" {
+			m.commandPendingByUUID[uuidKey] = name
+		}
+		m.commandNamesMu.Unlock()
+	}
+
 	allowed := true
 	denyMessage := "join denied by plugin"
 	mutable := newMutableState(func() {
@@ -157,9 +184,146 @@ func (m *Manager) AllowJoin(_ net.Addr, d login.IdentityData, _ login.ClientData
 	})
 	m.dispatchByPlayerID(0, abi.EventJoin, abi.FlagCancellable, payloadPlayerIdentityValues(d.DisplayName, d.Identity, d.XUID), mutable)
 	if !allowed {
+		if xuidKey != "" || uuidKey != "" {
+			m.commandNamesMu.Lock()
+			if xuidKey != "" {
+				delete(m.commandPendingByXUID, xuidKey)
+			}
+			if uuidKey != "" {
+				delete(m.commandPendingByUUID, uuidKey)
+			}
+			m.commandNamesMu.Unlock()
+		}
 		return denyMessage, false
 	}
 	return "", true
+}
+
+func normalizePlayerKey(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
+func normalizePlayerUUIDKey(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	parsed, err := uuid.Parse(v)
+	if err != nil {
+		return strings.ToLower(v)
+	}
+	return parsed.String()
+}
+
+func (m *Manager) trackPlayerCommandName(id uint64, p *player.Player) {
+	if m == nil || p == nil || id == 0 {
+		return
+	}
+	xuidKey := normalizePlayerKey(p.XUID())
+	uuidKey := normalizePlayerUUIDKey(p.UUID().String())
+	name := ""
+
+	m.commandNamesMu.Lock()
+	if xuidKey != "" {
+		if pending := strings.TrimSpace(m.commandPendingByXUID[xuidKey]); pending != "" {
+			name = pending
+		}
+		delete(m.commandPendingByXUID, xuidKey)
+	}
+	if name == "" && uuidKey != "" {
+		if pending := strings.TrimSpace(m.commandPendingByUUID[uuidKey]); pending != "" {
+			name = pending
+		}
+	}
+	if uuidKey != "" {
+		delete(m.commandPendingByUUID, uuidKey)
+	}
+	if name != "" {
+		m.commandNameByID[id] = name
+	}
+	m.commandNamesMu.Unlock()
+}
+
+func (m *Manager) untrackPlayerCommandName(id uint64, p *player.Player) {
+	if m == nil {
+		return
+	}
+	xuidKey := ""
+	uuidKey := ""
+	if p != nil {
+		xuidKey = normalizePlayerKey(p.XUID())
+		uuidKey = normalizePlayerUUIDKey(p.UUID().String())
+	}
+	m.commandNamesMu.Lock()
+	if id != 0 {
+		delete(m.commandNameByID, id)
+	}
+	if xuidKey != "" {
+		delete(m.commandPendingByXUID, xuidKey)
+	}
+	if uuidKey != "" {
+		delete(m.commandPendingByUUID, uuidKey)
+	}
+	m.commandNamesMu.Unlock()
+}
+
+func (m *Manager) commandTargetNames() []string {
+	if m == nil {
+		return nil
+	}
+	names := make([]string, 0, 16)
+	m.commandNamesMu.RLock()
+	for _, name := range m.commandNameByID {
+		names = append(names, name)
+	}
+	m.commandNamesMu.RUnlock()
+	if len(names) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" || strings.EqualFold(name, "default") {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, strings.ToLower(name))
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (m *Manager) commandTargetNameByID(id uint64) string {
+	if m == nil || id == 0 {
+		return ""
+	}
+	m.commandNamesMu.RLock()
+	name := strings.TrimSpace(m.commandNameByID[id])
+	m.commandNamesMu.RUnlock()
+	return name
+}
+
+func (m *Manager) commandTargetID(name string) uint64 {
+	if m == nil {
+		return 0
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0
+	}
+	m.commandNamesMu.RLock()
+	defer m.commandNamesMu.RUnlock()
+	for id, candidate := range m.commandNameByID {
+		if strings.EqualFold(strings.TrimSpace(candidate), name) {
+			return id
+		}
+	}
+	return 0
 }
 
 func (m *Manager) loadPlugins(dirPath string) error {

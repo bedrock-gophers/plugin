@@ -23,4 +23,5 @@ const (
 	hostCallPlayerCloseDialogue
 	hostCallPlayerSendMenuForm
 	hostCallPlayerSendModalForm
+	hostCallPlayerLatencyMillis
 )

@@ -10,9 +10,14 @@ import (
 
 var (
 	commandHandlersMu    sync.RWMutex
-	commandHandlers             = map[uint32]func(source CommandSource, args []string){}
+	commandHandlers             = map[uint32]commandHandler{}
 	nextCommandHandlerID uint32 = 1
 )
+
+type commandHandler struct {
+	allow func(source CommandSource) bool
+	run   func(source CommandSource, args []string)
+}
 
 type commandParameterKind uint8
 
@@ -23,6 +28,7 @@ const (
 	commandParameterSubcommand
 	commandParameterPluginAvailable
 	commandParameterPluginLoaded
+	commandParameterTarget
 )
 
 type commandParameterSpec struct {
@@ -72,10 +78,16 @@ func (s CommandSource) Message(message string) {
 
 // HandleCommand registers a low-level command handler owned by the plugin.
 func (baseEvents) HandleCommand(name, description string, aliases []string, fn func(source CommandSource, args []string)) {
-	registerCommandHandler(name, description, aliases, nil, fn)
+	registerCommandHandler(name, description, aliases, nil, nil, fn)
 }
 
-func registerCommandHandler(name, description string, aliases []string, overloads []commandOverloadSpec, fn func(source CommandSource, args []string)) {
+// HandleCommandWithAllower registers a low-level command handler and optional allower.
+// The allower is evaluated before the handler is run.
+func (baseEvents) HandleCommandWithAllower(name, description string, aliases []string, allow func(source CommandSource) bool, fn func(source CommandSource, args []string)) {
+	registerCommandHandler(name, description, aliases, nil, allow, fn)
+}
+
+func registerCommandHandler(name, description string, aliases []string, overloads []commandOverloadSpec, allow func(source CommandSource) bool, fn func(source CommandSource, args []string)) {
 	if fn == nil {
 		panic("guest.Base.HandleCommand: handler cannot be nil")
 	}
@@ -90,7 +102,10 @@ func registerCommandHandler(name, description string, aliases []string, overload
 	commandHandlersMu.Lock()
 	handlerID := nextCommandHandlerID
 	nextCommandHandlerID++
-	commandHandlers[handlerID] = fn
+	commandHandlers[handlerID] = commandHandler{
+		allow: allow,
+		run:   fn,
+	}
 	commandHandlersMu.Unlock()
 
 	if !registerCommand(name, description, aliases, handlerID, overloads) {
@@ -114,11 +129,16 @@ func dispatchPluginCommand(ev *Event) {
 	}
 	source := CommandSource{playerID: ev.PlayerID(), pluginName: ev.PluginName()}
 	commandHandlersMu.RLock()
-	fn, ok := commandHandlers[handlerID]
+	handler, ok := commandHandlers[handlerID]
 	commandHandlersMu.RUnlock()
-	if ok {
-		fn(source, args)
+	if !ok {
+		return
 	}
+	if handler.allow != nil && !handler.allow(source) {
+		source.Message("you are not allowed to use this command")
+		return
+	}
+	handler.run(source, args)
 }
 
 func normalizeCommandAliases(aliases []string, commandName string) []string {

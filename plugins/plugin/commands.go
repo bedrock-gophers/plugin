@@ -25,6 +25,22 @@ type pluginReloadCommand struct {
 	Target guest.Optional[string] `cmd:"target"`
 }
 
+func (pluginListCommand) Allow(source guest.CommandSource) bool {
+	return source.IsConsole()
+}
+
+func (pluginLoadCommand) Allow(source guest.CommandSource) bool {
+	return source.IsConsole()
+}
+
+func (pluginUnloadCommand) Allow(source guest.CommandSource) bool {
+	return source.IsConsole()
+}
+
+func (pluginReloadCommand) Allow(source guest.CommandSource) bool {
+	return source.IsConsole()
+}
+
 func (pluginListCommand) Run(ctx guest.Context) {
 	names, err := guest.ListPlugins()
 	if err != nil {

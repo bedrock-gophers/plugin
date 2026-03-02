@@ -197,6 +197,17 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
         return d.Ok && value;
     }
 
+    private static long DecodeI64(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0)
+        {
+            return 0;
+        }
+        var d = new AbiDecoder(payload);
+        var value = d.I64();
+        return d.Ok ? value : 0;
+    }
+
     private static byte[] EncodePlayerPayload(ulong playerId)
     {
         var enc = new AbiEncoder(8);
@@ -541,6 +552,11 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
     public bool SetPlayerImmobile(ulong playerId, bool value) => _api->set_player_immobile(_api->ctx, playerId, value ? 1 : 0) != 0;
 
     public bool PlayerDead(ulong playerId) => _api->player_dead(_api->ctx, playerId) != 0;
+
+    public long PlayerLatencyMillis(ulong playerId)
+    {
+        return DecodeI64(HostCall(HostCallOp.PlayerLatencyMillis, EncodePlayerPayload(playerId)));
+    }
 
     public bool SetPlayerOnFireMillis(ulong playerId, long millis) => _api->set_player_on_fire_millis(_api->ctx, playerId, millis) != 0;
 

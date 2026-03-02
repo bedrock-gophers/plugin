@@ -103,6 +103,7 @@ var (
 
 	varargsT    = reflect.TypeOf(Varargs(""))
 	subcommandT = reflect.TypeOf(SubCommand{})
+	targetT     = reflect.TypeOf(Target(""))
 )
 
 type goCommandDefinition struct {
@@ -125,6 +126,7 @@ type goParamDefinition struct {
 	greedy     bool
 	enum       bool
 	subcommand bool
+	target     bool
 
 	staticEnumOptions []string
 }
@@ -136,7 +138,7 @@ func (baseEvents) RegisterCommand(name, description string, aliases []string, ru
 	if err != nil {
 		panic(fmt.Sprintf("guest.Base.RegisterCommand: %v", err))
 	}
-	registerCommandHandler(name, description, aliases, compiled.overloads(), compiled.dispatch)
+	registerCommandHandler(name, description, aliases, compiled.overloads(), nil, compiled.dispatch)
 }
 
 func compileGoCommandDefinition(name string, runnables []any) (*goCommandDefinition, error) {
@@ -216,6 +218,7 @@ func compileGoRunnable(commandName string, runnable any) (goRunnableDefinition, 
 		param.greedy = typ == varargsT
 		param.enum = typ.Implements(enumT)
 		param.subcommand = typ == subcommandT
+		param.target = typ == targetT
 
 		if param.enum && typ.Kind() != reflect.String {
 			return goRunnableDefinition{}, fmt.Errorf("enum field %q must be backed by string", field.Name)
@@ -286,6 +289,8 @@ func (c *goCommandDefinition) overloads() []commandOverloadSpec {
 			switch {
 			case p.subcommand:
 				kind = commandParameterSubcommand
+			case p.target:
+				kind = commandParameterTarget
 			case p.enum:
 				if len(p.staticEnumOptions) > 0 {
 					kind = commandParameterEnum

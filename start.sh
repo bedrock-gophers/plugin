@@ -447,6 +447,14 @@ host_runtime_abi_sha() {
 		digest_input+="$rel:$file_sha"$'\n'
 	done < <(find "$HOST_REPO_DIR/plugin" -type f -name '*.go' -print0 | sort -z)
 
+	while IFS= read -r -d '' source_file; do
+		found=1
+		local rel="${source_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$source_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done < <(find "$HOST_REPO_DIR/plugin/sdk/csharp" -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.json' -o -name '*.props' -o -name '*.targets' \) -print0 | sort -z)
+
 	for mod_file in "$HOST_REPO_DIR/go.mod" "$HOST_REPO_DIR/go.sum"; do
 		[[ -f "$mod_file" ]] || continue
 		found=1
@@ -473,7 +481,7 @@ plugin_code_sha() {
 		local file_sha
 		file_sha="$(hash_file_sha256 "$source_file")"
 		digest_input+="$rel:$file_sha"$'\n'
-	done < <(find "$plugin_dir" -maxdepth 1 -type f \( -name '*.go' -o -name '*.cs' \) -print0 | sort -z)
+	done < <(find "$plugin_dir" -maxdepth 1 -type f \( -name '*.go' -o -name '*.cs' -o -name '*.csproj' -o -name '*.json' -o -name '*.props' -o -name '*.targets' \) -print0 | sort -z)
 
 	if [[ "$found" -eq 0 ]]; then
 		printf ''
@@ -735,11 +743,14 @@ compile_plugin_sources() {
 			fi
 		fi
 
-		if [[ ${#csproj_files[@]} -gt 0 ]]; then
-			ensure_csproj_exports "$entry"
-			local cs_sha
-			cs_sha="$(plugin_code_sha "$entry")"
-			for csproj in "${csproj_files[@]}"; do
+			if [[ ${#csproj_files[@]} -gt 0 ]]; then
+				ensure_csproj_exports "$entry"
+				local cs_sha
+				cs_sha="$(plugin_code_sha "$entry")"
+				if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+					cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+				fi
+				for csproj in "${csproj_files[@]}"; do
 				local project_name
 				project_name="$(basename "${csproj%.csproj}")"
 				local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$project_name/$project_name.so"
@@ -755,10 +766,13 @@ compile_plugin_sources() {
 					store_cached_plugin_artifact "csharp" "$cache_id" "$cs_sha" "$cs_target"
 				fi
 			done
-		elif [[ ${#cs_files[@]} -gt 0 ]]; then
-			local cs_sha
-			cs_sha="$(plugin_code_sha "$entry")"
-			local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$name/$name.so"
+			elif [[ ${#cs_files[@]} -gt 0 ]]; then
+				local cs_sha
+				cs_sha="$(plugin_code_sha "$entry")"
+				if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+					cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+				fi
+				local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$name/$name.so"
 			if [[ -n "$cs_sha" ]] && restore_cached_plugin_artifact "csharp" "$name" "$cs_sha" "$cs_target"; then
 				echo "using cached C# plugin for $PLUGIN_SRC_REL/$name/*.cs"
 				BUILT_CS+=("$cs_target")

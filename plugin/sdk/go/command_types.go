@@ -10,6 +10,7 @@ const (
 	CommandParameterSubcommand
 	CommandParameterPluginAvailable
 	CommandParameterPluginLoaded
+	CommandParameterTarget
 )
 
 // CommandParameterSpec describes one parameter in a command overload.

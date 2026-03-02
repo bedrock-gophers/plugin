@@ -8,6 +8,7 @@ Included:
 - Guest-side payload models and full event payload decoding (`src/Guest/*`)
 - High-level guest runtime API:
   - `var plugin = new Plugin("<name>", host); plugin.RegisterCommand(...)`
+  - optional command allowers via `RegisterCommand(..., allow, run)` overloads
   - convention handlers for all events (e.g. `OnMove`, `OnChat`, `OnBlockBreak`, ...)
   - `Plugin.HandleEvent(...)` / `Plugin.HandleMove(...)` for explicit registration
   - `CommandContext`/`EventContext` messaging (`Message`, `Messagef`)
