@@ -3,6 +3,7 @@
 Plugin host + SDK for Dragonfly, with support for:
 - Go plugins (`.so`)
 - C# plugins (NativeAOT `.so`)
+- Rust plugins (`cdylib` `.so`)
 
 ## Quick Start
 
@@ -22,7 +23,7 @@ Run with PowerShell on Windows:
 
 - `cmd/` - server entrypoint
 - `plugin/` - host runtime + ABI + SDKs
-- `plugins/` - example plugins (`vanilla`, `plugin`, `csharp`)
+- `plugins/` - example plugins (`vanilla` in Rust, `plugin` in Go, `csharp`)
 
 ## Development
 

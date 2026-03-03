@@ -12,8 +12,10 @@ Supported source layouts:
   plugins/<name>/*.go      -> built as Go plugin (.so)
   plugins/<name>/*.csproj  -> published as NativeAOT C# plugin (.so)
   plugins/<name>/*.cs      -> auto-generates csproj + export entrypoint, then publishes NativeAOT C# plugin (.so)
+  plugins/<name>/Cargo.toml -> built as Rust plugin (.so) from a cdylib crate
   plugins/*.so             -> prebuilt Go plugin fallback
   plugins/csharp/**.so     -> prebuilt C# plugin fallback
+  plugins/rust/**.so       -> prebuilt Rust plugin fallback
 
 Environment overrides:
   PLUGIN_SRC_DIR      Source plugin directory (default: $PWD/plugins, fallback: cached repo ./plugins)
@@ -27,6 +29,7 @@ Environment overrides:
   PLUGIN_ARTIFACT_CACHE_DIR Cached plugin artifact directory (default: $TMP_BASE/plugin-artifact-cache)
   PLUGIN_SHA_CACHE_DIR Plugin source hash directory (default: $TMP_BASE/plugin-sha-cache)
   PLUGIN_GO_IMAGE     Go image (default: golang:1.25)
+  PLUGIN_RUST_IMAGE   Rust image (default: rust:1.85)
   PLUGIN_DOTNET_IMAGE Dotnet SDK image (default: mcr.microsoft.com/dotnet/sdk:8.0)
   PLUGIN_DOTNET_AOT_IMAGE_TAG Docker image tag used for NativeAOT publish (default: bedrock-plugin-dotnet-aot:8.0)
   PLUGIN_CS_RID       C# runtime identifier (default: linux-x64)
@@ -56,6 +59,7 @@ if [[ -n "${PLUGIN_GO_IMAGE+x}" ]]; then
 	PLUGIN_GO_IMAGE_SET=1
 fi
 PLUGIN_GO_IMAGE="${PLUGIN_GO_IMAGE:-golang:1.25}"
+PLUGIN_RUST_IMAGE="${PLUGIN_RUST_IMAGE:-rust:1.85}"
 PLUGIN_DOTNET_IMAGE="${PLUGIN_DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
 PLUGIN_DOTNET_AOT_IMAGE_TAG="${PLUGIN_DOTNET_AOT_IMAGE_TAG:-bedrock-plugin-dotnet-aot:8.0}"
 PLUGIN_CS_RID="${PLUGIN_CS_RID:-linux-x64}"
@@ -78,6 +82,8 @@ STAGED_PLUGIN_SRC_REL=".start-plugin-src"
 STAGED_PLUGIN_SRC_DIR="$HOST_REPO_DIR/$STAGED_PLUGIN_SRC_REL"
 GO_BUILD_CACHE_DIR="$TMP_BASE/go-build-cache"
 GO_MOD_CACHE_DIR="$TMP_BASE/go-mod-cache"
+CARGO_REGISTRY_CACHE_DIR="$TMP_BASE/cargo-registry-cache"
+CARGO_GIT_CACHE_DIR="$TMP_BASE/cargo-git-cache"
 DOTNET_NUGET_CACHE_DIR="$TMP_BASE/dotnet-nuget-cache"
 HOST_REPO_CACHE_DIR="${HOST_REPO_CACHE_DIR:-$TMP_BASE/host-repo-cache}"
 PLUGIN_ARTIFACT_CACHE_DIR="${PLUGIN_ARTIFACT_CACHE_DIR:-$TMP_BASE/plugin-artifact-cache}"
@@ -106,8 +112,8 @@ if [[ "$PLUGIN_CS_RID" != linux-* ]]; then
 	exit 1
 fi
 
-mkdir -p "$RUNTIME_PLUGIN_DIR" "$RUNTIME_PLUGIN_DIR/csharp" "$RUNTIME_BUILD_DIR" "$HOST_REPO_DIR" "$HOST_REPO_CACHE_DIR"
-mkdir -p "$GO_BUILD_CACHE_DIR" "$GO_MOD_CACHE_DIR" "$DOTNET_NUGET_CACHE_DIR"
+mkdir -p "$RUNTIME_PLUGIN_DIR" "$RUNTIME_PLUGIN_DIR/csharp" "$RUNTIME_PLUGIN_DIR/rust" "$RUNTIME_BUILD_DIR" "$HOST_REPO_DIR" "$HOST_REPO_CACHE_DIR"
+mkdir -p "$GO_BUILD_CACHE_DIR" "$GO_MOD_CACHE_DIR" "$CARGO_REGISTRY_CACHE_DIR" "$CARGO_GIT_CACHE_DIR" "$DOTNET_NUGET_CACHE_DIR"
 mkdir -p "$PLUGIN_ARTIFACT_CACHE_DIR" "$PLUGIN_SHA_CACHE_DIR"
 
 cleanup() {
@@ -254,6 +260,8 @@ ROOT_MOUNT="$(host_path_for_docker "$HOST_REPO_DIR")"
 RUNTIME_MOUNT="$(host_path_for_docker "$RUNTIME_DIR")"
 GO_BUILD_CACHE_MOUNT="$(host_path_for_docker "$GO_BUILD_CACHE_DIR")"
 GO_MOD_CACHE_MOUNT="$(host_path_for_docker "$GO_MOD_CACHE_DIR")"
+CARGO_REGISTRY_CACHE_MOUNT="$(host_path_for_docker "$CARGO_REGISTRY_CACHE_DIR")"
+CARGO_GIT_CACHE_MOUNT="$(host_path_for_docker "$CARGO_GIT_CACHE_DIR")"
 DOTNET_NUGET_CACHE_MOUNT="$(host_path_for_docker "$DOTNET_NUGET_CACHE_DIR")"
 
 run_go() {
@@ -287,6 +295,19 @@ run_dotnet() {
 		-e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
 		-e NUGET_PACKAGES=/cache/nuget \
 		"$PLUGIN_DOTNET_AOT_IMAGE_TAG" \
+		"$@"
+}
+
+run_rust() {
+	docker run --rm \
+		--user "$DOCKER_RUN_USER" \
+		--mount "type=bind,src=$ROOT_MOUNT,dst=/workspace" \
+		--mount "type=bind,src=$RUNTIME_MOUNT,dst=/runtime" \
+		--mount "type=bind,src=$CARGO_REGISTRY_CACHE_MOUNT,dst=/cache/registry" \
+		--mount "type=bind,src=$CARGO_GIT_CACHE_MOUNT,dst=/cache/git" \
+		-w /workspace \
+		-e CARGO_HOME=/cache \
+		"$PLUGIN_RUST_IMAGE" \
 		"$@"
 }
 
@@ -412,6 +433,55 @@ resolve_linux_so() {
 	printf '%s' "$candidate"
 }
 
+cargo_library_name() {
+	local manifest="$1"
+	local name=""
+
+	if [[ -f "$manifest" ]]; then
+		name="$(awk -F= '
+			BEGIN { section = "" }
+			/^[[:space:]]*\[/ {
+				line = $0
+				gsub(/[[:space:]]/, "", line)
+				section = line
+				next
+			}
+			section == "[lib]" && $1 ~ /^[[:space:]]*name[[:space:]]*$/ {
+				value = $2
+				gsub(/"/, "", value)
+				gsub(/[[:space:]]/, "", value)
+				print value
+				exit
+			}
+		' "$manifest")"
+
+		if [[ -z "$name" ]]; then
+			name="$(awk -F= '
+				BEGIN { section = "" }
+				/^[[:space:]]*\[/ {
+					line = $0
+					gsub(/[[:space:]]/, "", line)
+					section = line
+					next
+				}
+				section == "[package]" && $1 ~ /^[[:space:]]*name[[:space:]]*$/ {
+					value = $2
+					gsub(/"/, "", value)
+					gsub(/[[:space:]]/, "", value)
+					print value
+					exit
+				}
+			' "$manifest")"
+		fi
+	fi
+
+	if [[ -z "$name" ]]; then
+		name="$(basename "$(dirname "$manifest")")"
+	fi
+	name="${name//-/_}"
+	printf '%s' "$name"
+}
+
 hash_text_sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then
 		sha256sum | awk '{print $1}'
@@ -455,6 +525,14 @@ host_runtime_abi_sha() {
 		digest_input+="$rel:$file_sha"$'\n'
 	done < <(find "$HOST_REPO_DIR/plugin/sdk/csharp" -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.json' -o -name '*.props' -o -name '*.targets' \) -print0 | sort -z)
 
+	while IFS= read -r -d '' source_file; do
+		found=1
+		local rel="${source_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$source_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done < <(find "$HOST_REPO_DIR/plugin/sdk/rust" -type f \( -name '*.rs' -o -name '*.toml' -o -name '*.lock' \) -print0 2>/dev/null | sort -z)
+
 	for mod_file in "$HOST_REPO_DIR/go.mod" "$HOST_REPO_DIR/go.sum"; do
 		[[ -f "$mod_file" ]] || continue
 		found=1
@@ -481,7 +559,21 @@ plugin_code_sha() {
 		local file_sha
 		file_sha="$(hash_file_sha256 "$source_file")"
 		digest_input+="$rel:$file_sha"$'\n'
-	done < <(find "$plugin_dir" -maxdepth 1 -type f \( -name '*.go' -o -name '*.cs' -o -name '*.csproj' -o -name '*.json' -o -name '*.props' -o -name '*.targets' \) -print0 | sort -z)
+	done < <(
+		find "$plugin_dir" \
+			-type d \( -name target -o -name obj -o -name bin \) -prune -o \
+			-type f \( \
+				-name '*.go' -o \
+				-name '*.cs' -o \
+				-name '*.csproj' -o \
+				-name '*.json' -o \
+				-name '*.props' -o \
+				-name '*.targets' -o \
+				-name '*.rs' -o \
+				-name '*.toml' -o \
+				-name '*.lock' \
+			\) -print0 | sort -z
+	)
 
 	if [[ "$found" -eq 0 ]]; then
 		printf ''
@@ -722,6 +814,7 @@ compile_plugin_sources() {
 		local csproj_files=("$entry"/*.csproj)
 		local cs_files=("$entry"/*.cs)
 		shopt -u nullglob
+		local cargo_manifest="$entry/Cargo.toml"
 
 		if [[ ${#go_files[@]} -gt 0 ]]; then
 			local go_sha
@@ -743,14 +836,14 @@ compile_plugin_sources() {
 			fi
 		fi
 
-			if [[ ${#csproj_files[@]} -gt 0 ]]; then
-				ensure_csproj_exports "$entry"
-				local cs_sha
-				cs_sha="$(plugin_code_sha "$entry")"
-				if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
-					cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
-				fi
-				for csproj in "${csproj_files[@]}"; do
+		if [[ ${#csproj_files[@]} -gt 0 ]]; then
+			ensure_csproj_exports "$entry"
+			local cs_sha
+			cs_sha="$(plugin_code_sha "$entry")"
+			if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+				cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+			fi
+			for csproj in "${csproj_files[@]}"; do
 				local project_name
 				project_name="$(basename "${csproj%.csproj}")"
 				local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$project_name/$project_name.so"
@@ -766,13 +859,13 @@ compile_plugin_sources() {
 					store_cached_plugin_artifact "csharp" "$cache_id" "$cs_sha" "$cs_target"
 				fi
 			done
-			elif [[ ${#cs_files[@]} -gt 0 ]]; then
-				local cs_sha
-				cs_sha="$(plugin_code_sha "$entry")"
-				if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
-					cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
-				fi
-				local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$name/$name.so"
+		elif [[ ${#cs_files[@]} -gt 0 ]]; then
+			local cs_sha
+			cs_sha="$(plugin_code_sha "$entry")"
+			if [[ -n "$cs_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+				cs_sha="$(printf '%s\n%s\n' "$cs_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+			fi
+			local cs_target="$RUNTIME_PLUGIN_DIR/csharp/$name/$name.so"
 			if [[ -n "$cs_sha" ]] && restore_cached_plugin_artifact "csharp" "$name" "$cs_sha" "$cs_target"; then
 				echo "using cached C# plugin for $PLUGIN_SRC_REL/$name/*.cs"
 				BUILT_CS+=("$cs_target")
@@ -782,6 +875,41 @@ compile_plugin_sources() {
 				if [[ -n "$cs_sha" && -f "$cs_target" ]]; then
 					store_cached_plugin_artifact "csharp" "$name" "$cs_sha" "$cs_target"
 				fi
+			fi
+		fi
+
+		if [[ -f "$cargo_manifest" ]]; then
+			local rust_sha
+			rust_sha="$(plugin_code_sha "$entry")"
+			if [[ -n "$rust_sha" && -n "$HOST_RUNTIME_ABI_SHA" ]]; then
+				rust_sha="$(printf '%s\n%s\n' "$rust_sha" "$HOST_RUNTIME_ABI_SHA" | hash_text_sha256)"
+			fi
+
+			local rust_target="$RUNTIME_PLUGIN_DIR/rust/$name/$name.so"
+			if [[ -n "$rust_sha" ]] && restore_cached_plugin_artifact "rust" "$name" "$rust_sha" "$rust_target"; then
+				echo "using cached Rust plugin for $PLUGIN_SRC_REL/$name/Cargo.toml"
+				BUILT_RUST+=("$rust_target")
+				continue
+			fi
+
+			local rust_lib_name
+			rust_lib_name="$(cargo_library_name "$cargo_manifest")"
+			echo "building Rust plugin from $PLUGIN_SRC_REL/$name/Cargo.toml"
+			run_rust cargo build --release --manifest-path "$PLUGIN_SRC_CONTAINER/$name/Cargo.toml"
+
+			local rust_out_dir="$entry/target/release"
+			local rust_artifact
+			rust_artifact="$(resolve_linux_so "$rust_out_dir" "$rust_lib_name")"
+			if [[ -z "$rust_artifact" ]]; then
+				echo "error: failed to find Rust plugin artifact (.so) for $name (expected base: $rust_lib_name)" >&2
+				exit 1
+			fi
+
+			mkdir -p "$(dirname "$rust_target")"
+			cp "$rust_artifact" "$rust_target"
+			BUILT_RUST+=("$rust_target")
+			if [[ -n "$rust_sha" && -f "$rust_target" ]]; then
+				store_cached_plugin_artifact "rust" "$name" "$rust_sha" "$rust_target"
 			fi
 		fi
 	done
@@ -816,6 +944,21 @@ copy_prebuilt_artifacts() {
 			cp "$so_file" "$dst"
 			COPIED_PREBUILT+=("$dst")
 		done < <(find "$PLUGIN_SRC_DIR/csharp" -type f -name '*.so' -print0)
+	fi
+
+	if [[ -d "$PLUGIN_SRC_DIR/rust" ]]; then
+		while IFS= read -r -d '' so_file; do
+			local name
+			name="$(basename "${so_file%.so}")"
+			if [[ -n "${BUILT_BY_NAME[$name]:-}" ]]; then
+				continue
+			fi
+			local rel="${so_file#"$PLUGIN_SRC_DIR"/}"
+			local dst="$RUNTIME_PLUGIN_DIR/$rel"
+			mkdir -p "$(dirname "$dst")"
+			cp "$so_file" "$dst"
+			COPIED_PREBUILT+=("$dst")
+		done < <(find "$PLUGIN_SRC_DIR/rust" -type f -name '*.so' -print0)
 	fi
 }
 
@@ -873,6 +1016,7 @@ GOLOAD
 
 BUILT_GO=()
 BUILT_CS=()
+BUILT_RUST=()
 COPIED_PREBUILT=()
 PREBUILT_GO_COPIED=()
 declare -A BUILT_BY_NAME=()
@@ -890,6 +1034,10 @@ for so_path in "${BUILT_CS[@]}"; do
 	name="$(basename "${so_path%.so}")"
 	BUILT_BY_NAME["$name"]=1
 done
+for so_path in "${BUILT_RUST[@]}"; do
+	name="$(basename "${so_path%.so}")"
+	BUILT_BY_NAME["$name"]=1
+done
 copy_prebuilt_artifacts
 validate_prebuilt_go_artifacts
 
@@ -901,10 +1049,13 @@ fi
 if [[ ${#BUILT_CS[@]} -gt 0 ]]; then
 	printf '  %s\n' "${BUILT_CS[@]}"
 fi
+if [[ ${#BUILT_RUST[@]} -gt 0 ]]; then
+	printf '  %s\n' "${BUILT_RUST[@]}"
+fi
 if [[ ${#COPIED_PREBUILT[@]} -gt 0 ]]; then
 	printf '  %s\n' "${COPIED_PREBUILT[@]}"
 fi
-if [[ ${#BUILT_GO[@]} -eq 0 && ${#BUILT_CS[@]} -eq 0 && ${#COPIED_PREBUILT[@]} -eq 0 ]]; then
+if [[ ${#BUILT_GO[@]} -eq 0 && ${#BUILT_CS[@]} -eq 0 && ${#BUILT_RUST[@]} -eq 0 && ${#COPIED_PREBUILT[@]} -eq 0 ]]; then
 	echo "  none"
 fi
 

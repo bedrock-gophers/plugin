@@ -34,6 +34,7 @@ type pluginKind uint8
 const (
 	pluginKindGo pluginKind = iota
 	pluginKindCSharp
+	pluginKindRust
 )
 
 type pluginRuntime struct {
@@ -42,7 +43,7 @@ type pluginRuntime struct {
 	kind     pluginKind
 	loaded   bool
 	onUnload func()
-	csharp   *csharpRuntime
+	runtime  *csharpRuntime
 
 	mu       sync.RWMutex
 	commands map[string]pluginCommandBlueprint

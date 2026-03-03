@@ -375,31 +375,43 @@ func unregisterCSharpMutableState(ctxID uintptr, requestKey uint64) {
 }
 
 func (m *Manager) startCSharpPlugin(plug *pluginRuntime) error {
+	return m.startNativePlugin(plug, "csharp")
+}
+
+func (m *Manager) startRustPlugin(plug *pluginRuntime) error {
+	return m.startNativePlugin(plug, "rust")
+}
+
+func (m *Manager) startNativePlugin(plug *pluginRuntime, kind string) error {
+	kind = strings.TrimSpace(strings.ToLower(kind))
+	if kind == "" {
+		kind = "native"
+	}
 	if plug == nil {
-		return fmt.Errorf("csharp plugin runtime is nil")
+		return fmt.Errorf("%s plugin runtime is nil", kind)
 	}
 	if !strings.EqualFold(filepath.Ext(plug.path), ".so") {
-		return fmt.Errorf("csharp plugin must be a native shared library (.so), got %q", filepath.Ext(plug.path))
+		return fmt.Errorf("%s plugin must be a native shared library (.so), got %q", kind, filepath.Ext(plug.path))
 	}
 
-	rt, err := loadCSharpRuntime(m, plug)
+	rt, err := loadNativeRuntime(m, plug, kind)
 	if err != nil {
 		return err
 	}
-	plug.csharp = rt
+	plug.runtime = rt
 	plug.onUnload = func() {
 		rt.close()
 	}
 	return nil
 }
 
-func loadCSharpRuntime(m *Manager, plug *pluginRuntime) (*csharpRuntime, error) {
+func loadNativeRuntime(m *Manager, plug *pluginRuntime, kind string) (*csharpRuntime, error) {
 	cPath := C.CString(plug.path)
 	defer C.free(unsafe.Pointer(cPath))
 
 	handle := C.csharp_open_library(cPath)
 	if handle == nil {
-		return nil, fmt.Errorf("open csharp plugin %q: %s", plug.path, csharpLastError())
+		return nil, fmt.Errorf("open %s plugin %q: %s", kind, plug.path, csharpLastError())
 	}
 
 	loadFn, err := lookupCSharpSymbol(handle, "PluginLoad")
@@ -430,7 +442,7 @@ func loadCSharpRuntime(m *Manager, plug *pluginRuntime) (*csharpRuntime, error) 
 		unregisterCSharpHostContext(ctxID)
 		C.free(unsafe.Pointer(hostAPI))
 		C.csharp_close_library(handle)
-		return nil, fmt.Errorf("PluginLoad returned false for csharp plugin %q", plug.path)
+		return nil, fmt.Errorf("PluginLoad returned false for %s plugin %q", kind, plug.path)
 	}
 
 	return &csharpRuntime{
@@ -448,7 +460,7 @@ func lookupCSharpSymbol(handle unsafe.Pointer, symbol string) (unsafe.Pointer, e
 	defer C.free(unsafe.Pointer(cSymbol))
 	ptr := C.csharp_lookup_symbol(handle, cSymbol)
 	if ptr == nil {
-		return nil, fmt.Errorf("lookup csharp plugin symbol %q failed: %s", symbol, csharpLastError())
+		return nil, fmt.Errorf("lookup native plugin symbol %q failed: %s", symbol, csharpLastError())
 	}
 	return ptr, nil
 }

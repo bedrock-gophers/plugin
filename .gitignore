@@ -3,3 +3,4 @@ plugins/*.so
 .tmp/
 bin/
 obj/
+target/

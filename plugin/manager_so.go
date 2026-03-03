@@ -355,6 +355,7 @@ func collectGoSOPaths(dirPath string) ([]string, error) {
 	}
 
 	csDir := filepath.Join(dirPath, "csharp")
+	rustDir := filepath.Join(dirPath, "rust")
 
 	var soPaths []string
 	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
@@ -363,6 +364,9 @@ func collectGoSOPaths(dirPath string) ([]string, error) {
 		}
 		if d.IsDir() {
 			if strings.EqualFold(path, csDir) {
+				return filepath.SkipDir
+			}
+			if strings.EqualFold(path, rustDir) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -393,7 +397,12 @@ func collectPluginPaths(dirPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	rustPaths, err := collectRustPluginSOs(dirPath)
+	if err != nil {
+		return nil, err
+	}
 	all := append(soPaths, csPaths...)
+	all = append(all, rustPaths...)
 	sort.Strings(all)
 	return all, nil
 }
@@ -434,6 +443,47 @@ func collectCSharpPluginSOs(dirPath string) ([]string, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("walk csharp plugins: %w", err)
+	}
+	sort.Strings(soPaths)
+	return soPaths, nil
+}
+
+func collectRustPluginSOs(dirPath string) ([]string, error) {
+	rustDir := filepath.Join(dirPath, "rust")
+	if _, err := os.Stat(rustDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat rust plugins dir: %w", err)
+	}
+
+	var soPaths []string
+	err := filepath.WalkDir(rustDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if strings.EqualFold(d.Name(), "target") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(d.Name()), ".so") {
+			return nil
+		}
+		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if !strings.EqualFold(base, filepath.Base(filepath.Dir(path))) {
+			return nil
+		}
+		normalized, err := normalizePluginPath(path)
+		if err != nil {
+			return err
+		}
+		soPaths = append(soPaths, normalized)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk rust plugins: %w", err)
 	}
 	sort.Strings(soPaths)
 	return soPaths, nil
@@ -708,6 +758,10 @@ func (m *Manager) loadPath(path, forcedName string) (string, error) {
 		m.setRegisteringPlugin(plug)
 		err = m.startCSharpPlugin(plug)
 		m.clearRegisteringPlugin(plug)
+	case pluginKindRust:
+		m.setRegisteringPlugin(plug)
+		err = m.startRustPlugin(plug)
+		m.clearRegisteringPlugin(plug)
 	default:
 		err = fmt.Errorf("unsupported plugin kind %d", plug.kind)
 	}
@@ -819,6 +873,10 @@ func (m *Manager) activatePlugin(plug *pluginRuntime) error {
 		m.setRegisteringPlugin(plug)
 		err = m.startCSharpPlugin(plug)
 		m.clearRegisteringPlugin(plug)
+	case pluginKindRust:
+		m.setRegisteringPlugin(plug)
+		err = m.startRustPlugin(plug)
+		m.clearRegisteringPlugin(plug)
 	default:
 		err = fmt.Errorf("unsupported plugin kind %d", plug.kind)
 	}
@@ -894,6 +952,10 @@ func (m *Manager) pluginKindForSOPath(path string) pluginKind {
 	csRoot, err := normalizePluginPath(filepath.Join(m.dir, "csharp"))
 	if err == nil && pathWithin(path, csRoot) {
 		return pluginKindCSharp
+	}
+	rustRoot, err := normalizePluginPath(filepath.Join(m.dir, "rust"))
+	if err == nil && pathWithin(path, rustRoot) {
+		return pluginKindRust
 	}
 	return pluginKindGo
 }
@@ -1122,16 +1184,28 @@ func (m *Manager) dispatchToPlugin(plug *pluginRuntime, playerID uint64, eventID
 	case pluginKindGo:
 		guest.DispatchEvent(plug.name, desc, payload, mutable)
 	case pluginKindCSharp:
-		if plug.csharp == nil {
+		if plug.runtime == nil {
 			return
 		}
-		requestKey := registerCSharpMutableState(plug.csharp.ctxID, mutable)
+		requestKey := registerCSharpMutableState(plug.runtime.ctxID, mutable)
 		if requestKey != 0 {
 			desc.RequestKey = requestKey
-			defer unregisterCSharpMutableState(plug.csharp.ctxID, requestKey)
+			defer unregisterCSharpMutableState(plug.runtime.ctxID, requestKey)
 		}
-		if err := plug.csharp.dispatch(m, plug, desc, payload); err != nil {
-			slog.Error("dispatch csharp plugin event", "plugin", plug.name, "event", abi.EventName(eventID), "err", err)
+		if err := plug.runtime.dispatch(m, plug, desc, payload); err != nil {
+			slog.Error("dispatch native plugin event", "plugin", plug.name, "kind", "csharp", "event", abi.EventName(eventID), "err", err)
+		}
+	case pluginKindRust:
+		if plug.runtime == nil {
+			return
+		}
+		requestKey := registerCSharpMutableState(plug.runtime.ctxID, mutable)
+		if requestKey != 0 {
+			desc.RequestKey = requestKey
+			defer unregisterCSharpMutableState(plug.runtime.ctxID, requestKey)
+		}
+		if err := plug.runtime.dispatch(m, plug, desc, payload); err != nil {
+			slog.Error("dispatch native plugin event", "plugin", plug.name, "kind", "rust", "event", abi.EventName(eventID), "err", err)
 		}
 	}
 }

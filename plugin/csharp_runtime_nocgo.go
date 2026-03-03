@@ -11,10 +11,18 @@ import (
 type csharpRuntime struct{}
 
 func (m *Manager) startCSharpPlugin(plug *pluginRuntime) error {
+	return m.startNativePlugin(plug, "csharp")
+}
+
+func (m *Manager) startRustPlugin(plug *pluginRuntime) error {
+	return m.startNativePlugin(plug, "rust")
+}
+
+func (m *Manager) startNativePlugin(plug *pluginRuntime, kind string) error {
 	if plug == nil {
-		return fmt.Errorf("csharp plugin runtime is nil")
+		return fmt.Errorf("%s plugin runtime is nil", kind)
 	}
-	return fmt.Errorf("csharp plugins require cgo; rebuild with CGO_ENABLED=1 and a working C toolchain")
+	return fmt.Errorf("%s plugins require cgo; rebuild with CGO_ENABLED=1 and a working C toolchain", kind)
 }
 
 func (rt *csharpRuntime) dispatch(_ *Manager, _ *pluginRuntime, _ abi.EventDescriptor, _ []byte) error {

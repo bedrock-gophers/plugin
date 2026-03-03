@@ -7,7 +7,7 @@ help:
 	@echo "  make generate     - regenerate internal code"
 	@echo "  make fmt          - format Go source files"
 	@echo "  make test         - run go test ./..."
-	@echo "  make plugins      - build example plugins (Go .so + C# publish output) into ./plugins"
+	@echo "  make plugins      - build example plugins (Go .so + Rust .so + C# publish output) into ./plugins"
 	@echo "  make plugins-docker - build example plugins using Docker only"
 	@echo "  make dev-plugins  - build plugins and print in-game reload reminder"
 	@echo "  make run          - run ./start.sh using local host source (USE_LOCAL_HOST_WORKTREE=1)"
