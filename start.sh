@@ -533,6 +533,22 @@ host_runtime_abi_sha() {
 		digest_input+="$rel:$file_sha"$'\n'
 	done < <(find "$HOST_REPO_DIR/plugin/sdk/rust" -type f \( -name '*.rs' -o -name '*.toml' -o -name '*.lock' \) -print0 2>/dev/null | sort -z)
 
+	while IFS= read -r -d '' source_file; do
+		found=1
+		local rel="${source_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$source_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done < <(find "$HOST_REPO_DIR/internal/generator/output" -type f \( -name '*.go' -o -name '*.cs' -o -name '*.h' \) -print0 2>/dev/null | sort -z)
+
+	while IFS= read -r -d '' source_file; do
+		found=1
+		local rel="${source_file#"$HOST_REPO_DIR"/}"
+		local file_sha
+		file_sha="$(hash_file_sha256 "$source_file")"
+		digest_input+="$rel:$file_sha"$'\n'
+	done < <(find "$HOST_REPO_DIR/cmd" -type f -name '*.go' -print0 2>/dev/null | sort -z)
+
 	for mod_file in "$HOST_REPO_DIR/go.mod" "$HOST_REPO_DIR/go.sum"; do
 		[[ -f "$mod_file" ]] || continue
 		found=1
