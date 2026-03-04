@@ -4,11 +4,11 @@ SHELL := /usr/bin/env bash
 
 help:
 	@echo "Targets:"
-	@echo "  make generate     - regenerate internal code"
+	@echo "  make generate     - regenerate interop bindings"
 	@echo "  make fmt          - format Go source files"
 	@echo "  make test         - run go test ./..."
-	@echo "  make plugins      - build example plugins (Go .so + Rust .so + C# publish output) into ./plugins"
-	@echo "  make plugins-docker - build example plugins using Docker only"
+	@echo "  make plugins      - build C# example plugins into ./plugins/csharp"
+	@echo "  make plugins-docker - build C# example plugins using Docker only"
 	@echo "  make dev-plugins  - build plugins and print in-game reload reminder"
 	@echo "  make run          - run ./start.sh using local host source (USE_LOCAL_HOST_WORKTREE=1)"
 	@echo "  make run-remote   - run ./start.sh using cached/fetched host source"
@@ -16,9 +16,7 @@ help:
 	@echo "  make dev          - generate + fmt + test + plugins"
 
 generate:
-	cd plugin/internal/ctxkey && go generate ./...
-	cd plugin/internal/hostapi && go generate ./...
-	cd plugin/internal/catalog && go generate ./...
+	cd internal/generator && go run ./cmd
 
 fmt:
 	gofmt -w $$(find . -type f -name '*.go')

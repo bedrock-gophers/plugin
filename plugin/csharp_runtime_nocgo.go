@@ -8,7 +8,9 @@ import (
 	"github.com/bedrock-gophers/plugin/plugin/abi"
 )
 
-type csharpRuntime struct{}
+type csharpRuntime struct {
+	ctxID uintptr
+}
 
 func (m *Manager) startCSharpPlugin(plug *pluginRuntime) error {
 	return m.startNativePlugin(plug, "csharp")
@@ -30,3 +32,7 @@ func (rt *csharpRuntime) dispatch(_ *Manager, _ *pluginRuntime, _ abi.EventDescr
 }
 
 func (rt *csharpRuntime) close() {}
+
+func registerCSharpMutableState(_ uintptr, _ *mutableState) uint64 { return 0 }
+
+func unregisterCSharpMutableState(_ uintptr, _ uint64) {}

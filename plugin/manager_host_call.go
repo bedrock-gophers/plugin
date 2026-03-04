@@ -142,12 +142,6 @@ func (m *Manager) HostCall(op uint32, payload []byte) []byte {
 			return encodeBoolPayload(false)
 		}
 		return encodeBoolPayload(m.PlayerSendModalForm(playerID, value))
-	case hostCallPlayerLatencyMillis:
-		playerID, ok := decodePlayerID(d)
-		if !ok {
-			return encodeI64Payload(0)
-		}
-		return encodeI64Payload(m.PlayerLatencyMillis(playerID))
 	default:
 		return nil
 	}
@@ -170,12 +164,6 @@ func encodeStringListPayload(values []string) []byte {
 func encodeBoolPayload(value bool) []byte {
 	enc := abi.NewEncoder(1)
 	enc.Bool(value)
-	return enc.Data()
-}
-
-func encodeI64Payload(value int64) []byte {
-	enc := abi.NewEncoder(8)
-	enc.I64(value)
 	return enc.Data()
 }
 

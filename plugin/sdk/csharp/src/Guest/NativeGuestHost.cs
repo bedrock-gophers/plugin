@@ -385,6 +385,15 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
         }
     }
 
+    public ulong PlayerHandle(ulong playerId)
+    {
+        if (_api->player_handle == null)
+        {
+            return 0;
+        }
+        return _api->player_handle(_api->ctx, playerId);
+    }
+
     public IReadOnlyList<string> OnlinePlayerNames()
     {
         uint outLen = 0;
@@ -553,10 +562,7 @@ internal unsafe sealed class NativeGuestHost : IGuestHost
 
     public bool PlayerDead(ulong playerId) => _api->player_dead(_api->ctx, playerId) != 0;
 
-    public long PlayerLatencyMillis(ulong playerId)
-    {
-        return DecodeI64(HostCall(HostCallOp.PlayerLatencyMillis, EncodePlayerPayload(playerId)));
-    }
+    public TimeSpan PlayerLatency(ulong playerId) => TimeSpan.FromMilliseconds(System.Math.Max(0L, _api->player_latency(_api->ctx, playerId)));
 
     public bool SetPlayerOnFireMillis(ulong playerId, long millis) => _api->set_player_on_fire_millis(_api->ctx, playerId, millis) != 0;
 

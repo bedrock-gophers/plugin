@@ -12,7 +12,7 @@ Included:
   - convention handlers for all events (e.g. `OnMove`, `OnChat`, `OnBlockBreak`, ...)
   - `Plugin.HandleEvent(...)` / `Plugin.HandleMove(...)` for explicit registration
   - `CommandContext`/`EventContext` messaging (`Message`, `Messagef`)
-  - `PlayerRef` operations backed by host API
+  - generated `BedrockPlugin.Interop` handle types (from `internal/generator/output`) for direct object interop
 - plugin management helpers (`ListPlugins`, `LoadPlugins`, `UnloadPlugins`, `ReloadPlugins`)
 - native in-process plugin ABI bridge (`NativePlugin`):
   - `NativePlugin.Register<YourPlugin>()` (recommended for NativeAOT + convention handlers)

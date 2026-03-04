@@ -76,7 +76,12 @@ public static unsafe class NativePlugin
             }
             catch (Exception ex)
             {
-                host.ConsoleMessage(name, $"PluginLoad failed: {ex.Message}");
+                var detail = ex.ToString();
+                if (ex.InnerException is not null)
+                {
+                    detail = $"{detail}\nInner: {ex.InnerException}";
+                }
+                host.ConsoleMessage(name, $"PluginLoad failed: {detail}");
                 _plugin = null;
                 _host = null;
                 _pluginName = "csharp";

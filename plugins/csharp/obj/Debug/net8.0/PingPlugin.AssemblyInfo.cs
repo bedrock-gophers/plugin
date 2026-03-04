@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PingPlugin")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e6d139c367237b0e3b626b2dfd9dd07df714d68d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+99b1e965aeab7ede1bbf7dceb57f2dab1a75837f")]
 [assembly: System.Reflection.AssemblyProductAttribute("PingPlugin")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PingPlugin")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -28,10 +28,13 @@ type Host interface {
 	RegisterCommand(pluginName, name, description string, aliases []string, handlerID uint32, overloads []CommandOverloadSpec) bool
 	ManagePlugins(action uint32, target string) ([]string, error)
 	ResolvePlayerByName(name string) uint64
+	PlayerHandle(playerID uint64) uint64
 	OnlinePlayerNames() []string
 	BlockNames() []string
 	ItemNames() []string
 	WorldNames() []string
+	EventCancel(requestKey uint64) bool
+	EventSetItemDrop(requestKey uint64, stack ItemStackData) bool
 	playerHost
 	ConsoleMessage(pluginName, message string)
 }
