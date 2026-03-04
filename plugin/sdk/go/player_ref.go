@@ -2,7 +2,8 @@ package guest
 
 import (
 	"strings"
-	"time"
+
+	"github.com/sandertv/gophertunnel/minecraft/text"
 )
 
 type GameMode int32
@@ -53,21 +54,6 @@ func (t Target) Player() (PlayerRef, bool) {
 	return PlayerByName(string(t))
 }
 
-// Latency returns the rolling player latency as a duration.
-// If unavailable, it returns 0.
-func (p PlayerRef) Latency() time.Duration {
-	type latencyHost interface {
-		PlayerLatencyMillis(playerID uint64) int64
-	}
-	return hostValue(time.Duration(0), func(h Host) time.Duration {
-		lh, ok := any(h).(latencyHost)
-		if !ok {
-			return 0
-		}
-		ms := lh.PlayerLatencyMillis(p.id)
-		if ms < 0 {
-			return 0
-		}
-		return time.Duration(ms) * time.Millisecond
-	})
+func (p PlayerRef) Messagef(format string, a ...any) {
+	p.Message(text.Colourf(format, a...))
 }

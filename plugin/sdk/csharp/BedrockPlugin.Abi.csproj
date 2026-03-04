@@ -7,4 +7,8 @@
     <RootNamespace>BedrockPlugin.Sdk</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../../internal/generator/output/interop_bindings.g.cs" Link="src/Generated/interop_bindings.g.cs" />
+  </ItemGroup>
 </Project>

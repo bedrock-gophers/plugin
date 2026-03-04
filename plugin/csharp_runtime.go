@@ -11,6 +11,7 @@ package plugin
 extern int csharp_register_command(uintptr_t ctx, char* plugin_name, char* name, char* description, char* aliases_csv, uint32_t handler_id, uint8_t* overloads, uint32_t overloads_len);
 extern uint8_t* csharp_manage_plugins(uintptr_t ctx, uint32_t action, char* target, uint32_t* out_len);
 extern uint64_t csharp_resolve_player_by_name(uintptr_t ctx, char* name);
+extern uint64_t csharp_player_handle(uintptr_t ctx, uint64_t player_id);
 extern uint8_t* csharp_online_player_names(uintptr_t ctx, uint32_t* out_len);
 extern void csharp_console_message(uintptr_t ctx, char* plugin_name, char* message);
 extern uint8_t* csharp_host_call(uintptr_t ctx, uint32_t op, uint8_t* payload, uint32_t payload_len, uint32_t* out_len);
@@ -66,6 +67,7 @@ extern int csharp_set_player_invisible(uintptr_t ctx, uint64_t player_id, int va
 extern int csharp_player_immobile(uintptr_t ctx, uint64_t player_id);
 extern int csharp_set_player_immobile(uintptr_t ctx, uint64_t player_id, int value);
 extern int csharp_player_dead(uintptr_t ctx, uint64_t player_id);
+extern int64_t csharp_player_latency(uintptr_t ctx, uint64_t player_id);
 extern int csharp_set_player_on_fire_millis(uintptr_t ctx, uint64_t player_id, int64_t millis);
 extern int csharp_add_player_food(uintptr_t ctx, uint64_t player_id, int32_t points);
 extern int csharp_player_use_item(uintptr_t ctx, uint64_t player_id);
@@ -85,6 +87,7 @@ typedef struct {
 	int (*register_command)(uintptr_t ctx, char* plugin_name, char* name, char* description, char* aliases_csv, uint32_t handler_id, uint8_t* overloads, uint32_t overloads_len);
 	uint8_t* (*manage_plugins)(uintptr_t ctx, uint32_t action, char* target, uint32_t* out_len);
 	uint64_t (*resolve_player_by_name)(uintptr_t ctx, char* name);
+	uint64_t (*player_handle)(uintptr_t ctx, uint64_t player_id);
 	uint8_t* (*online_player_names)(uintptr_t ctx, uint32_t* out_len);
 	void (*console_message)(uintptr_t ctx, char* plugin_name, char* message);
 	uint8_t* (*host_call)(uintptr_t ctx, uint32_t op, uint8_t* payload, uint32_t payload_len, uint32_t* out_len);
@@ -140,6 +143,7 @@ typedef struct {
 	int (*player_immobile)(uintptr_t ctx, uint64_t player_id);
 	int (*set_player_immobile)(uintptr_t ctx, uint64_t player_id, int value);
 	int (*player_dead)(uintptr_t ctx, uint64_t player_id);
+	int64_t (*player_latency)(uintptr_t ctx, uint64_t player_id);
 	int (*set_player_on_fire_millis)(uintptr_t ctx, uint64_t player_id, int64_t millis);
 	int (*add_player_food)(uintptr_t ctx, uint64_t player_id, int32_t points);
 	int (*player_use_item)(uintptr_t ctx, uint64_t player_id);
@@ -165,6 +169,7 @@ static csharp_host_api make_host_api(uintptr_t ctx) {
 	api.register_command = csharp_register_command;
 	api.manage_plugins = csharp_manage_plugins;
 	api.resolve_player_by_name = csharp_resolve_player_by_name;
+	api.player_handle = csharp_player_handle;
 	api.online_player_names = csharp_online_player_names;
 	api.console_message = csharp_console_message;
 	api.host_call = csharp_host_call;
@@ -220,6 +225,7 @@ static csharp_host_api make_host_api(uintptr_t ctx) {
 	api.player_immobile = csharp_player_immobile;
 	api.set_player_immobile = csharp_set_player_immobile;
 	api.player_dead = csharp_player_dead;
+	api.player_latency = csharp_player_latency;
 	api.set_player_on_fire_millis = csharp_set_player_on_fire_millis;
 	api.add_player_food = csharp_add_player_food;
 	api.player_use_item = csharp_player_use_item;
@@ -508,18 +514,12 @@ func (rt *csharpRuntime) close() {
 		return
 	}
 	rt.closed = true
-	unloadFn := rt.unloadFn
-	handle := rt.handle
 	hostAPI := rt.hostAPI
 	ctxID := rt.ctxID
 	rt.mu.Unlock()
 
-	if unloadFn != nil {
-		C.csharp_call_plugin_unload(unloadFn)
-	}
-	if handle != nil {
-		C.csharp_close_library(handle)
-	}
+	// NativeAOT shared libraries are not safely unloadable in-process.
+	// Avoid calling PluginUnload/dlclose to prevent shutdown crashes.
 	if hostAPI != nil {
 		C.free(unsafe.Pointer(hostAPI))
 	}
@@ -695,6 +695,15 @@ func csharp_resolve_player_by_name(ctx C.uintptr_t, name *C.char) C.uint64_t {
 	return C.uint64_t(hostCtx.manager.ResolvePlayerByName(goCString(name)))
 }
 
+//export csharp_player_handle
+func csharp_player_handle(ctx C.uintptr_t, playerID C.uint64_t) C.uint64_t {
+	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
+	if !ok || hostCtx.manager == nil {
+		return 0
+	}
+	return C.uint64_t(hostCtx.manager.PlayerHandle(uint64(playerID)))
+}
+
 //export csharp_online_player_names
 func csharp_online_player_names(ctx C.uintptr_t, outLen *C.uint32_t) *C.uint8_t {
 	if outLen != nil {
@@ -786,528 +795,6 @@ func csharp_event_item_drop_set(ctx C.uintptr_t, requestKey C.uint64_t, payload 
 	}
 	setMutableItemDrop(mutable, value)
 	return 1
-}
-
-//export csharp_player_health
-func csharp_player_health(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerHealth(uint64(playerID)))
-}
-
-//export csharp_set_player_health
-func csharp_set_player_health(ctx C.uintptr_t, playerID C.uint64_t, health C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerHealth(uint64(playerID), float64(health)))
-}
-
-//export csharp_player_food
-func csharp_player_food(ctx C.uintptr_t, playerID C.uint64_t) C.int32_t {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.int32_t(hostCtx.manager.PlayerFood(uint64(playerID)))
-}
-
-//export csharp_set_player_food
-func csharp_set_player_food(ctx C.uintptr_t, playerID C.uint64_t, food C.int32_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerFood(uint64(playerID), int32(food)))
-}
-
-//export csharp_player_name
-func csharp_player_name(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerName(uint64(playerID)))
-}
-
-//export csharp_player_game_mode
-func csharp_player_game_mode(ctx C.uintptr_t, playerID C.uint64_t) C.int32_t {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.int32_t(hostCtx.manager.PlayerGameMode(uint64(playerID)))
-}
-
-//export csharp_set_player_game_mode
-func csharp_set_player_game_mode(ctx C.uintptr_t, playerID C.uint64_t, mode C.int32_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerGameMode(uint64(playerID), int32(mode)))
-}
-
-//export csharp_player_xuid
-func csharp_player_xuid(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerXUID(uint64(playerID)))
-}
-
-//export csharp_player_device_id
-func csharp_player_device_id(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerDeviceID(uint64(playerID)))
-}
-
-//export csharp_player_device_model
-func csharp_player_device_model(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerDeviceModel(uint64(playerID)))
-}
-
-//export csharp_player_self_signed_id
-func csharp_player_self_signed_id(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerSelfSignedID(uint64(playerID)))
-}
-
-//export csharp_player_name_tag
-func csharp_player_name_tag(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerNameTag(uint64(playerID)))
-}
-
-//export csharp_set_player_name_tag
-func csharp_set_player_name_tag(ctx C.uintptr_t, playerID C.uint64_t, value *C.char) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerNameTag(uint64(playerID), goCString(value)))
-}
-
-//export csharp_player_score_tag
-func csharp_player_score_tag(ctx C.uintptr_t, playerID C.uint64_t) *C.char {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return cString("")
-	}
-	return cString(hostCtx.manager.PlayerScoreTag(uint64(playerID)))
-}
-
-//export csharp_set_player_score_tag
-func csharp_set_player_score_tag(ctx C.uintptr_t, playerID C.uint64_t, value *C.char) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerScoreTag(uint64(playerID), goCString(value)))
-}
-
-//export csharp_player_absorption
-func csharp_player_absorption(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerAbsorption(uint64(playerID)))
-}
-
-//export csharp_set_player_absorption
-func csharp_set_player_absorption(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerAbsorption(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_max_health
-func csharp_player_max_health(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerMaxHealth(uint64(playerID)))
-}
-
-//export csharp_set_player_max_health
-func csharp_set_player_max_health(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerMaxHealth(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_speed
-func csharp_player_speed(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerSpeed(uint64(playerID)))
-}
-
-//export csharp_set_player_speed
-func csharp_set_player_speed(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerSpeed(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_flight_speed
-func csharp_player_flight_speed(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerFlightSpeed(uint64(playerID)))
-}
-
-//export csharp_set_player_flight_speed
-func csharp_set_player_flight_speed(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerFlightSpeed(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_vertical_flight_speed
-func csharp_player_vertical_flight_speed(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerVerticalFlightSpeed(uint64(playerID)))
-}
-
-//export csharp_set_player_vertical_flight_speed
-func csharp_set_player_vertical_flight_speed(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerVerticalFlightSpeed(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_experience
-func csharp_player_experience(ctx C.uintptr_t, playerID C.uint64_t) C.int32_t {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.int32_t(hostCtx.manager.PlayerExperience(uint64(playerID)))
-}
-
-//export csharp_player_experience_level
-func csharp_player_experience_level(ctx C.uintptr_t, playerID C.uint64_t) C.int32_t {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.int32_t(hostCtx.manager.PlayerExperienceLevel(uint64(playerID)))
-}
-
-//export csharp_set_player_experience_level
-func csharp_set_player_experience_level(ctx C.uintptr_t, playerID C.uint64_t, value C.int32_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerExperienceLevel(uint64(playerID), int32(value)))
-}
-
-//export csharp_player_experience_progress
-func csharp_player_experience_progress(ctx C.uintptr_t, playerID C.uint64_t) C.double {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return C.double(hostCtx.manager.PlayerExperienceProgress(uint64(playerID)))
-}
-
-//export csharp_set_player_experience_progress
-func csharp_set_player_experience_progress(ctx C.uintptr_t, playerID C.uint64_t, value C.double) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerExperienceProgress(uint64(playerID), float64(value)))
-}
-
-//export csharp_player_on_ground
-func csharp_player_on_ground(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerOnGround(uint64(playerID)))
-}
-
-//export csharp_player_sneaking
-func csharp_player_sneaking(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerSneaking(uint64(playerID)))
-}
-
-//export csharp_set_player_sneaking
-func csharp_set_player_sneaking(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerSneaking(uint64(playerID), value != 0))
-}
-
-//export csharp_player_sprinting
-func csharp_player_sprinting(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerSprinting(uint64(playerID)))
-}
-
-//export csharp_set_player_sprinting
-func csharp_set_player_sprinting(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerSprinting(uint64(playerID), value != 0))
-}
-
-//export csharp_player_swimming
-func csharp_player_swimming(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerSwimming(uint64(playerID)))
-}
-
-//export csharp_set_player_swimming
-func csharp_set_player_swimming(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerSwimming(uint64(playerID), value != 0))
-}
-
-//export csharp_player_flying
-func csharp_player_flying(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerFlying(uint64(playerID)))
-}
-
-//export csharp_set_player_flying
-func csharp_set_player_flying(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerFlying(uint64(playerID), value != 0))
-}
-
-//export csharp_player_gliding
-func csharp_player_gliding(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerGliding(uint64(playerID)))
-}
-
-//export csharp_set_player_gliding
-func csharp_set_player_gliding(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerGliding(uint64(playerID), value != 0))
-}
-
-//export csharp_player_crawling
-func csharp_player_crawling(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerCrawling(uint64(playerID)))
-}
-
-//export csharp_set_player_crawling
-func csharp_set_player_crawling(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerCrawling(uint64(playerID), value != 0))
-}
-
-//export csharp_player_using_item
-func csharp_player_using_item(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerUsingItem(uint64(playerID)))
-}
-
-//export csharp_player_invisible
-func csharp_player_invisible(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerInvisible(uint64(playerID)))
-}
-
-//export csharp_set_player_invisible
-func csharp_set_player_invisible(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerInvisible(uint64(playerID), value != 0))
-}
-
-//export csharp_player_immobile
-func csharp_player_immobile(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerImmobile(uint64(playerID)))
-}
-
-//export csharp_set_player_immobile
-func csharp_set_player_immobile(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerImmobile(uint64(playerID), value != 0))
-}
-
-//export csharp_player_dead
-func csharp_player_dead(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerDead(uint64(playerID)))
-}
-
-//export csharp_set_player_on_fire_millis
-func csharp_set_player_on_fire_millis(ctx C.uintptr_t, playerID C.uint64_t, millis C.int64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerOnFireMillis(uint64(playerID), int64(millis)))
-}
-
-//export csharp_add_player_food
-func csharp_add_player_food(ctx C.uintptr_t, playerID C.uint64_t, points C.int32_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.AddPlayerFood(uint64(playerID), int32(points)))
-}
-
-//export csharp_player_use_item
-func csharp_player_use_item(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerUseItem(uint64(playerID)))
-}
-
-//export csharp_player_jump
-func csharp_player_jump(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerJump(uint64(playerID)))
-}
-
-//export csharp_player_swing_arm
-func csharp_player_swing_arm(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerSwingArm(uint64(playerID)))
-}
-
-//export csharp_player_wake
-func csharp_player_wake(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerWake(uint64(playerID)))
-}
-
-//export csharp_player_extinguish
-func csharp_player_extinguish(ctx C.uintptr_t, playerID C.uint64_t) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.PlayerExtinguish(uint64(playerID)))
-}
-
-//export csharp_set_player_show_coordinates
-func csharp_set_player_show_coordinates(ctx C.uintptr_t, playerID C.uint64_t, value C.int) C.int {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return 0
-	}
-	return boolInt(hostCtx.manager.SetPlayerShowCoordinates(uint64(playerID), value != 0))
-}
-
-//export csharp_player_message
-func csharp_player_message(ctx C.uintptr_t, playerID C.uint64_t, message *C.char) {
-	hostCtx, ok := csharpHostContextByID(uintptr(ctx))
-	if !ok || hostCtx.manager == nil {
-		return
-	}
-	hostCtx.manager.PlayerMessage(uint64(playerID), goCString(message))
 }
 
 //export csharp_free_string

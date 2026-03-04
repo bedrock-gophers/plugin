@@ -1,9 +1,7 @@
 # bedrock-gophers/plugin
 
 Plugin host + SDK for Dragonfly, with support for:
-- Go plugins (`.so`)
 - C# plugins (NativeAOT `.so`)
-- Rust plugins (`cdylib` `.so`)
 
 ## Quick Start
 
@@ -22,8 +20,9 @@ Run with PowerShell on Windows:
 ## Project Layout
 
 - `cmd/` - server entrypoint
-- `plugin/` - host runtime + ABI + SDKs
-- `plugins/` - example plugins (`vanilla` in Rust, `plugin` in Go, `csharp`)
+- `plugin/` - C# SDK
+- `plugins/` - C# example plugins
+- `internal/generator/output/` - generated Go/C/C# interop bindings (Go output kept as generated SDK example)
 
 ## Development
 
@@ -39,7 +38,7 @@ Typical local checks:
 make test
 ```
 
-Regenerate internal generated code:
+Regenerate interop bindings:
 
 ```bash
 make generate
@@ -47,7 +46,7 @@ make generate
 
 ## Notes
 
-- C# plugins require `cgo` in the host build and are loaded from native shared libraries.
+- C# plugins are loaded from native shared libraries.
 - For plugin reload while running, use:
 
 ```text

@@ -1,160 +1,154 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR="$ROOT_DIR/plugins"
-PLUGINS_DIR="$ROOT_DIR/examples/plugins"
-CS_OUT_DIR="$OUT_DIR/csharp"
-PLUGIN_GO_IMAGE="${PLUGIN_GO_IMAGE:-golang:1.25.7}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGINS_DIR="$ROOT_DIR/plugins"
+OUT_BASE="$PLUGINS_DIR/csharp"
 PLUGIN_DOTNET_IMAGE="${PLUGIN_DOTNET_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
 PLUGIN_CS_RID="${PLUGIN_CS_RID:-linux-x64}"
 PLUGIN_DOTNET_AOT_IMAGE_TAG="${PLUGIN_DOTNET_AOT_IMAGE_TAG:-bedrock-plugin-dotnet-aot:8.0}"
 TMP_BASE="${TMP_BASE:-$ROOT_DIR/.tmp}"
-GO_BUILD_CACHE_DIR="$TMP_BASE/go-build-cache"
-GO_MOD_CACHE_DIR="$TMP_BASE/go-mod-cache"
 DOTNET_NUGET_CACHE_DIR="$TMP_BASE/dotnet-nuget-cache"
 
+ensure_cs_exports() {
+  local plugin_dir="$1"
+  local generated_exports="$plugin_dir/__plugin_exports.generated.cs"
+
+  if rg -n 'EntryPoint\s*=\s*"PluginLoad"' "$plugin_dir" --glob '*.cs' >/dev/null 2>&1; then
+    if [[ -f "$generated_exports" ]]; then
+      rm "$generated_exports"
+    fi
+    printf '%s' ""
+    return
+  fi
+
+  cat > "$generated_exports" <<'CSWRAP'
+using BedrockPlugin.Sdk.Guest;
+using System.Runtime.InteropServices;
+
+namespace GeneratedPluginEntrypoint;
+
+public static unsafe class GeneratedPluginExports
+{
+    [UnmanagedCallersOnly(EntryPoint = "PluginLoad")]
+    public static int PluginLoad(NativeHostApi* hostApi, byte* pluginName) => NativePlugin.Load(hostApi, pluginName);
+
+    [UnmanagedCallersOnly(EntryPoint = "PluginUnload")]
+    public static void PluginUnload() => NativePlugin.Unload();
+
+    [UnmanagedCallersOnly(EntryPoint = "PluginDispatchEvent")]
+    public static void PluginDispatchEvent(ushort version, ushort eventId, uint flags, ulong playerId, ulong requestKey, byte* payload, uint payloadLen)
+        => NativePlugin.DispatchEvent(version, eventId, flags, playerId, requestKey, payload, payloadLen);
+}
+CSWRAP
+
+  printf '%s' "$generated_exports"
+}
+
 if ! command -v docker >/dev/null 2>&1; then
-	echo "error: docker CLI not found" >&2
-	exit 1
+  echo "error: docker CLI not found" >&2
+  exit 1
 fi
 if ! docker info >/dev/null 2>&1; then
-	echo "error: docker daemon is not reachable" >&2
-	exit 1
+  echo "error: docker daemon is not reachable" >&2
+  exit 1
 fi
 if [[ "$PLUGIN_CS_RID" != linux-* ]]; then
-	echo "error: PLUGIN_CS_RID must target linux-* (got: $PLUGIN_CS_RID)" >&2
-	exit 1
+  echo "error: PLUGIN_CS_RID must target linux-* (got: $PLUGIN_CS_RID)" >&2
+  exit 1
 fi
 
-mkdir -p "$OUT_DIR"
-rm -rf "$CS_OUT_DIR"
-mkdir -p "$CS_OUT_DIR"
-mkdir -p "$GO_BUILD_CACHE_DIR" "$GO_MOD_CACHE_DIR" "$DOTNET_NUGET_CACHE_DIR"
+mkdir -p "$OUT_BASE" "$DOTNET_NUGET_CACHE_DIR"
 
 shopt -s nullglob
-plugin_dirs=("$PLUGINS_DIR"/*)
-if [ ${#plugin_dirs[@]} -eq 0 ]; then
-	echo "no plugins found in $PLUGINS_DIR"
-	exit 0
+csproj_files=("$PLUGINS_DIR"/*/*.csproj)
+shopt -u nullglob
+
+if [[ ${#csproj_files[@]} -eq 0 ]]; then
+  echo "no C# plugins found under $PLUGINS_DIR"
+  exit 0
 fi
 
 host_path_for_docker() {
-	local path="$1"
-	case "$(uname -s)" in
-	MINGW*|MSYS*|CYGWIN*)
-		if command -v cygpath >/dev/null 2>&1; then
-			cygpath -m "$path"
-		else
-			printf '%s' "$path"
-		fi
-		;;
-	*)
-		printf '%s' "$path"
-		;;
-	esac
+  local path="$1"
+  case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if command -v cygpath >/dev/null 2>&1; then
+      cygpath -m "$path"
+    else
+      printf '%s' "$path"
+    fi
+    ;;
+  *)
+    printf '%s' "$path"
+    ;;
+  esac
 }
 
 ROOT_MOUNT="$(host_path_for_docker "$ROOT_DIR")"
-GO_BUILD_CACHE_MOUNT="$(host_path_for_docker "$GO_BUILD_CACHE_DIR")"
-GO_MOD_CACHE_MOUNT="$(host_path_for_docker "$GO_MOD_CACHE_DIR")"
 DOTNET_NUGET_CACHE_MOUNT="$(host_path_for_docker "$DOTNET_NUGET_CACHE_DIR")"
 
 ensure_dotnet_aot_image() {
-	if docker image inspect "$PLUGIN_DOTNET_AOT_IMAGE_TAG" >/dev/null 2>&1; then
-		return
-	fi
-	DOCKER_BUILDKIT=1 docker build -t "$PLUGIN_DOTNET_AOT_IMAGE_TAG" - >/dev/null <<DOCKER
+  if docker image inspect "$PLUGIN_DOTNET_AOT_IMAGE_TAG" >/dev/null 2>&1; then
+    return
+  fi
+
+  DOCKER_BUILDKIT=1 docker build -t "$PLUGIN_DOTNET_AOT_IMAGE_TAG" - >/dev/null <<DOCKER
 FROM $PLUGIN_DOTNET_IMAGE
 RUN apt-get update \
-	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends clang zlib1g-dev \
-	&& rm -rf /var/lib/apt/lists/*
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends clang zlib1g-dev \
+  && rm -rf /var/lib/apt/lists/*
 DOCKER
 }
 
-run_go() {
-	docker run --rm \
-		--mount "type=bind,src=$ROOT_MOUNT,dst=/workspace" \
-		--mount "type=bind,src=$GO_BUILD_CACHE_MOUNT,dst=/root/.cache/go-build" \
-		--mount "type=bind,src=$GO_MOD_CACHE_MOUNT,dst=/go/pkg/mod" \
-		-w /workspace \
-		-e CGO_ENABLED=1 \
-		-e GOFLAGS=-buildvcs=false \
-		-e GOEXPERIMENT="${GOEXPERIMENT:-}" \
-		"$PLUGIN_GO_IMAGE" \
-		"$@"
-}
+ensure_dotnet_aot_image
 
-run_dotnet_publish() {
-	local csproj="$1"
-	local out_dir="$2"
-	ensure_dotnet_aot_image
-	docker run --rm \
-		--mount "type=bind,src=$ROOT_MOUNT,dst=/workspace" \
-		--mount "type=bind,src=$DOTNET_NUGET_CACHE_MOUNT,dst=/root/.nuget/packages" \
-		-w /workspace \
-		"$PLUGIN_DOTNET_AOT_IMAGE_TAG" \
-		dotnet publish "$csproj" -c Release -o "$out_dir" -r "$PLUGIN_CS_RID" /p:PublishAot=true /p:NativeLib=Shared /p:SelfContained=true --nologo >/dev/null
-}
+built=()
+for csproj in "${csproj_files[@]}"; do
+  project_name="$(basename "${csproj%.csproj}")"
+  plugin_dir="$(dirname "$csproj")"
+  rel_csproj="${csproj#$ROOT_DIR/}"
+  out_dir="$OUT_BASE/$project_name"
+  mkdir -p "$out_dir"
 
-built_go=()
-built_cs=()
+  generated_exports="$(ensure_cs_exports "$plugin_dir")"
+  docker run --rm \
+    --mount "type=bind,src=$ROOT_MOUNT,dst=/workspace" \
+    --mount "type=bind,src=$DOTNET_NUGET_CACHE_MOUNT,dst=/root/.nuget/packages" \
+    -w /workspace \
+    "$PLUGIN_DOTNET_AOT_IMAGE_TAG" \
+    /bin/bash -lc "dotnet restore \"/workspace/$rel_csproj\" -r \"$PLUGIN_CS_RID\" --nologo >/dev/null && dotnet publish \"/workspace/$rel_csproj\" -c Release -o \"/workspace/plugins/csharp/$project_name\" -r \"$PLUGIN_CS_RID\" /p:PublishAot=true /p:NativeLib=Shared /p:SelfContained=true --nologo >/dev/null"
 
-for dir in "${plugin_dirs[@]}"; do
-	[ -d "$dir" ] || continue
-	name="$(basename "$dir")"
+  artifact=""
+  if [[ -f "$out_dir/$project_name.so" ]]; then
+    artifact="$out_dir/$project_name.so"
+  elif [[ -f "$out_dir/lib$project_name.so" ]]; then
+    artifact="$out_dir/lib$project_name.so"
+  else
+    shopt -s nullglob
+    candidates=("$out_dir"/*.so)
+    shopt -u nullglob
+    if [[ ${#candidates[@]} -gt 0 ]]; then
+      artifact="${candidates[0]}"
+    fi
+  fi
 
-	shopt -s nullglob
-	go_files=("$dir"/*.go)
-	csproj_files=("$dir"/*.csproj)
-	shopt -u nullglob
+  if [[ -z "$artifact" ]]; then
+    echo "failed to find native C# plugin artifact (.so) for $project_name" >&2
+    exit 1
+  fi
 
-	if [ ${#go_files[@]} -gt 0 ]; then
-		run_go go build -buildmode=plugin -o "/workspace/plugins/$name.so" "./examples/plugins/$name"
-		built_go+=("$OUT_DIR/$name.so")
-	fi
+  target="$out_dir/$project_name.so"
+  if [[ "$artifact" != "$target" ]]; then
+    cp "$artifact" "$target"
+  fi
 
-	if [ ${#csproj_files[@]} -gt 0 ]; then
-		for csproj in "${csproj_files[@]}"; do
-			proj_name="$(basename "${csproj%.csproj}")"
-			out="$CS_OUT_DIR/$proj_name"
-			mkdir -p "$out"
-			run_dotnet_publish "/workspace/examples/plugins/$name/$proj_name.csproj" "/workspace/plugins/csharp/$proj_name"
+  if [[ -n "$generated_exports" && -f "$generated_exports" ]]; then
+    rm "$generated_exports"
+  fi
 
-			artifact=""
-			if [ -f "$out/$proj_name.so" ]; then
-				artifact="$out/$proj_name.so"
-			elif [ -f "$out/lib$proj_name.so" ]; then
-				artifact="$out/lib$proj_name.so"
-			else
-				shopt -s nullglob
-				candidates=("$out"/*.so)
-				shopt -u nullglob
-				if [ ${#candidates[@]} -gt 0 ]; then
-					artifact="${candidates[0]}"
-				fi
-			fi
-			if [ -z "$artifact" ]; then
-				echo "failed to find native C# plugin artifact (.so) for $proj_name" >&2
-				exit 1
-			fi
-
-			target="$out/$proj_name.so"
-			if [ "$artifact" != "$target" ]; then
-				cp "$artifact" "$target"
-			fi
-			built_cs+=("$target")
-		done
-	fi
+  built+=("$target")
 done
 
-echo "built plugins:"
-if [ ${#built_go[@]} -gt 0 ]; then
-	printf '%s\n' "${built_go[@]}"
-fi
-if [ ${#built_cs[@]} -gt 0 ]; then
-	printf '%s\n' "${built_cs[@]}"
-fi
-if [ ${#built_go[@]} -eq 0 ] && [ ${#built_cs[@]} -eq 0 ]; then
-	echo "none"
-fi
+echo "C# plugins built with Docker:"
+printf '%s\n' "${built[@]}"

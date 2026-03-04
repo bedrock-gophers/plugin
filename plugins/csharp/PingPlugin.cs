@@ -1,4 +1,5 @@
 using BedrockPlugin.Sdk.Guest;
+using BedrockPlugin.Interop;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -7,12 +8,14 @@ namespace BedrockPlugin.Examples.PingPlugin;
 public sealed class PingPlugin : Plugin
 {
     private readonly Dictionary<ulong, double> _lastYawByPlayerId = new();
+    private static readonly IReadOnlyList<CommandParameterSpec> PingCommandParameters = new List<CommandParameterSpec>
+    {
+        CommandParameterSpec.Target(optional: true),
+    };
+
     private static readonly CommandOverloadSpec[] PingCommandOverloads =
     {
-        new(new[]
-        {
-            CommandParameterSpec.Target(optional: true),
-        }),
+        new(PingCommandParameters),
     };
 
     public PingPlugin(string name, IGuestHost host) : base(name, host)
@@ -33,15 +36,15 @@ public sealed class PingPlugin : Plugin
             return;
         }
 
-        var latency = target.Latency();
-        var latencyMillis = Math.Max(0L, (long)Math.Round(latency.TotalMilliseconds, MidpointRounding.AwayFromZero));
+        var latencyNanos = target.Latency();
+        var latencyMillis = Math.Max(0L, (long)Math.Round(latencyNanos / 1_000_000d, MidpointRounding.AwayFromZero));
         var targetName = target.Name();
         if (string.IsNullOrWhiteSpace(targetName))
         {
             targetName = "target";
         }
 
-        if (ctx.TryPlayer(out var sourcePlayer) && sourcePlayer is not null && sourcePlayer.Id == target.Id)
+        if (ctx.IsPlayer && args.Count == 0)
         {
             ctx.Messagef("your latency is {0}ms", latencyMillis);
             return;
@@ -49,7 +52,7 @@ public sealed class PingPlugin : Plugin
         ctx.Messagef("{0} latency is {1}ms", targetName, latencyMillis);
     }
 
-    private bool TryResolvePingTarget(CommandContext ctx, IReadOnlyList<string> args, out PlayerRef target)
+    private bool TryResolvePingTarget(CommandContext ctx, IReadOnlyList<string> args, out Player_Player target)
     {
         if (args.Count == 0)
         {
@@ -83,7 +86,6 @@ public sealed class PingPlugin : Plugin
     }
 
 
-    [SuppressMessage("Style", "IDE0051:Remove unused private members", Justification = "Invoked via Plugin convention reflection.")]
     private void OnMove(EventContext ctx, Vec3 _, Rotation newRot)
     {
         if (!ctx.TryPlayer(out var player) || player is null)
@@ -92,11 +94,11 @@ public sealed class PingPlugin : Plugin
         }
 
         var yaw = newRot.Yaw;
-        if (_lastYawByPlayerId.TryGetValue(player.Id, out var previousYaw) && !NearlyEqual(previousYaw, yaw))
+        if (_lastYawByPlayerId.TryGetValue(ctx.PlayerId, out var previousYaw) && !NearlyEqual(previousYaw, yaw))
         {
-            player.Message("your yaw changed");
+            ctx.Message("your yaw changed");
         }
-        _lastYawByPlayerId[player.Id] = yaw;
+        _lastYawByPlayerId[ctx.PlayerId] = yaw;
     }
 
     private static bool NearlyEqual(double a, double b)
@@ -104,16 +106,15 @@ public sealed class PingPlugin : Plugin
         return Math.Abs(a - b) <= 0.00001d;
     }
 
-    [SuppressMessage("Style", "IDE0051:Remove unused private members", Justification = "Invoked via Plugin convention reflection.")]
     private void OnItemDrop(EventContext _, MutableArgument<ItemStackData> i)
     {
         var dropped = i.Get();
-        if (!dropped.HasItem || !string.Equals(dropped.ItemName, Item.CookedBeef, StringComparison.OrdinalIgnoreCase))
+        if (!dropped.HasItem || !string.Equals(dropped.ItemName, "minecraft:cooked_beef", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        i.Set(Item.NewStack(Item.Beef, dropped.Count, 0, dropped.CustomName));
+        i.Set(Item.NewStack("minecraft:beef", dropped.Count, 0, dropped.CustomName));
     }
 
     [ModuleInitializer]

@@ -10,6 +10,7 @@ public unsafe struct NativeHostApi
     public delegate* unmanaged<nuint, byte*, byte*, byte*, byte*, uint, byte*, uint, int> register_command;
     public delegate* unmanaged<nuint, uint, byte*, uint*, byte*> manage_plugins;
     public delegate* unmanaged<nuint, byte*, ulong> resolve_player_by_name;
+    public delegate* unmanaged<nuint, ulong, ulong> player_handle;
     public delegate* unmanaged<nuint, uint*, byte*> online_player_names;
     public delegate* unmanaged<nuint, byte*, byte*, void> console_message;
     public delegate* unmanaged<nuint, uint, byte*, uint, uint*, byte*> host_call;
@@ -65,6 +66,7 @@ public unsafe struct NativeHostApi
     public delegate* unmanaged<nuint, ulong, int> player_immobile;
     public delegate* unmanaged<nuint, ulong, int, int> set_player_immobile;
     public delegate* unmanaged<nuint, ulong, int> player_dead;
+    public delegate* unmanaged<nuint, ulong, long> player_latency;
     public delegate* unmanaged<nuint, ulong, long, int> set_player_on_fire_millis;
     public delegate* unmanaged<nuint, ulong, int, int> add_player_food;
     public delegate* unmanaged<nuint, ulong, int> player_use_item;

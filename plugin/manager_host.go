@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	genoutput "github.com/bedrock-gophers/plugin/internal/generator/output"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -89,9 +90,9 @@ func (m *Manager) SetPlayerOnFireMillis(playerID uint64, millis int64) bool {
 	})
 }
 
-func (m *Manager) PlayerLatencyMillis(playerID uint64) int64 {
-	return playerValue(m, playerID, int64(0), func(p *player.Player) int64 {
-		return p.Latency().Milliseconds()
+func (m *Manager) PlayerLatency(playerID uint64) time.Duration {
+	return playerValue(m, playerID, time.Duration(0), func(p *player.Player) time.Duration {
+		return p.Latency()
 	})
 }
 
@@ -118,8 +119,26 @@ func (m *Manager) ResolvePlayerByName(name string) uint64 {
 	return id
 }
 
+func (m *Manager) PlayerHandle(playerID uint64) uint64 {
+	p, ok := m.players.byID(playerID)
+	if !ok || p == nil {
+		return 0
+	}
+	return genoutput.RegisterExternalObject(p)
+}
+
 func (m *Manager) OnlinePlayerNames() []string {
 	return m.commandTargetNames()
+}
+
+func (m *Manager) EventCancel(_ uint64) bool {
+	// Go plugins mutate cancellable events through MutableState directly.
+	return false
+}
+
+func (m *Manager) EventSetItemDrop(_ uint64, _ ItemStackData) bool {
+	// Go plugins mutate item drops through MutableState directly.
+	return false
 }
 
 func maxF64(a, b float64) float64 {

@@ -1,4 +1,5 @@
 using BedrockPlugin.Sdk.Abi;
+using BedrockPlugin.Interop;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -23,14 +24,20 @@ public sealed class CommandContext
 
     public IReadOnlyList<string> RawArgs => _rawArgs;
 
-    public bool TryPlayer(out PlayerRef? player)
+    public bool TryPlayer(out Player_Player? player)
     {
         if (_playerId == 0)
         {
             player = null;
             return false;
         }
-        player = new PlayerRef(_plugin, _playerId);
+        var handle = _plugin.Host.PlayerHandle(_playerId);
+        if (handle == 0)
+        {
+            player = null;
+            return false;
+        }
+        player = new Player_Player(handle);
         return true;
     }
 
@@ -68,18 +75,27 @@ public sealed class EventContext
 
     public bool IsPlayer => Descriptor.PlayerId != 0;
 
-    public bool TryPlayer(out PlayerRef? player)
+    public bool TryPlayer(out Player_Player? player)
     {
         if (Descriptor.PlayerId == 0)
         {
             player = null;
             return false;
         }
-        player = new PlayerRef(_plugin, Descriptor.PlayerId);
+        var handle = _plugin.Host.PlayerHandle(Descriptor.PlayerId);
+        if (handle == 0)
+        {
+            player = null;
+            return false;
+        }
+        player = new Player_Player(handle);
         return true;
     }
 
-    public PlayerRef Player => new(_plugin, Descriptor.PlayerId);
+    public Player_Player Player =>
+        TryPlayer(out var player) && player is not null
+            ? player
+            : throw new InvalidOperationException("event is not associated with a player");
 
     public void Message(string message)
     {
@@ -337,7 +353,7 @@ public class Plugin
         ctx.CommitMutable();
     }
 
-    public bool TryPlayerByName(string name, out PlayerRef? player)
+    public bool TryPlayerByName(string name, out Player_Player? player)
     {
         name = (name ?? string.Empty).Trim();
         if (name.Length == 0)
@@ -351,7 +367,13 @@ public class Plugin
             player = null;
             return false;
         }
-        player = new PlayerRef(this, id);
+        var handle = Host.PlayerHandle(id);
+        if (handle == 0)
+        {
+            player = null;
+            return false;
+        }
+        player = new Player_Player(handle);
         return true;
     }
 

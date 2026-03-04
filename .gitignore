@@ -4,3 +4,6 @@ plugins/*.so
 bin/
 obj/
 target/
+.idea/
+*.so
+*.pdb
