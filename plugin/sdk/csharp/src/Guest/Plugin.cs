@@ -1,5 +1,4 @@
 using BedrockPlugin.Sdk.Abi;
-using BedrockPlugin.Interop;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -10,13 +9,21 @@ public sealed class CommandContext
     private readonly Plugin _plugin;
     private readonly ulong _playerId;
     private readonly IReadOnlyList<string> _rawArgs;
+    private readonly IReadOnlyDictionary<string, object?> _values;
 
-    internal CommandContext(Plugin plugin, ulong playerId, IReadOnlyList<string> rawArgs)
+    internal CommandContext(
+        Plugin plugin,
+        ulong playerId,
+        IReadOnlyList<string> rawArgs,
+        IReadOnlyDictionary<string, object?>? values = null)
     {
         _plugin = plugin;
         _playerId = playerId;
         _rawArgs = rawArgs;
+        _values = values ?? EmptyValues;
     }
+
+    private static IReadOnlyDictionary<string, object?> EmptyValues { get; } = new Dictionary<string, object?>(0);
 
     public bool IsConsole => _playerId == 0;
 
@@ -24,21 +31,84 @@ public sealed class CommandContext
 
     public IReadOnlyList<string> RawArgs => _rawArgs;
 
-    public bool TryPlayer(out Player_Player? player)
+    public T Get<T>(string name)
     {
-        if (_playerId == 0)
+        name = (name ?? string.Empty).Trim();
+        if (name.Length == 0 || !_values.ContainsKey(name))
         {
-            player = null;
-            return false;
+            throw new KeyNotFoundException($"command argument {name} was not provided");
         }
-        var handle = _plugin.Host.PlayerHandle(_playerId);
-        if (handle == 0)
+
+        return ConvertValue<T>(name, _values[name]);
+    }
+
+    public T GetOrDefault<T>(string name, T fallback = default!)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (name.Length == 0 || !_values.ContainsKey(name))
         {
-            player = null;
-            return false;
+            return fallback;
         }
-        player = new Player_Player(handle);
-        return true;
+        try
+        {
+            return ConvertValue<T>(name, _values[name]);
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    public T? GetOptional<T>(string name)
+    {
+        name = (name ?? string.Empty).Trim();
+        if (name.Length == 0 || !_values.ContainsKey(name))
+        {
+            return default;
+        }
+        try
+        {
+            return ConvertValue<T>(name, _values[name]);
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    public Player? Player
+    {
+        get
+        {
+            return _plugin.PlayerById(_playerId);
+        }
+    }
+
+    private static T ConvertValue<T>(string name, object? raw)
+    {
+        if (raw is null)
+        {
+            throw new InvalidCastException($"command argument {name} is null");
+        }
+
+        if (raw is T typed)
+        {
+            return typed;
+        }
+
+        if (typeof(T).IsEnum && raw is string enumRaw && Enum.TryParse(typeof(T), enumRaw, true, out var enumValue) && enumValue is T enumTyped)
+        {
+            return enumTyped;
+        }
+
+        try
+        {
+            return (T)Convert.ChangeType(raw, typeof(T));
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidCastException($"command argument {name} cannot be converted to {typeof(T).Name}", ex);
+        }
     }
 
     public void Message(string message)
@@ -55,6 +125,11 @@ public sealed class CommandContext
     {
         Message(TextFormat.Colourf(format, args));
     }
+
+    internal CommandContext WithValues(IReadOnlyDictionary<string, object?> values)
+    {
+        return new CommandContext(_plugin, _playerId, _rawArgs, values);
+    }
 }
 
 public sealed class EventContext
@@ -62,6 +137,7 @@ public sealed class EventContext
     private readonly Plugin _plugin;
     private bool _cancelRequested;
     private MutableArgument<ItemStackData>? _itemDrop;
+    private MutableArgument<Item.Stack>? _itemDropStack;
 
     internal EventContext(Plugin plugin, EventDescriptor descriptor)
     {
@@ -75,27 +151,13 @@ public sealed class EventContext
 
     public bool IsPlayer => Descriptor.PlayerId != 0;
 
-    public bool TryPlayer(out Player_Player? player)
+    public Player? Player
     {
-        if (Descriptor.PlayerId == 0)
+        get
         {
-            player = null;
-            return false;
+            return _plugin.PlayerById(Descriptor.PlayerId);
         }
-        var handle = _plugin.Host.PlayerHandle(Descriptor.PlayerId);
-        if (handle == 0)
-        {
-            player = null;
-            return false;
-        }
-        player = new Player_Player(handle);
-        return true;
     }
-
-    public Player_Player Player =>
-        TryPlayer(out var player) && player is not null
-            ? player
-            : throw new InvalidOperationException("event is not associated with a player");
 
     public void Message(string message)
     {
@@ -123,13 +185,29 @@ public sealed class EventContext
         return _itemDrop;
     }
 
+    internal MutableArgument<Item.Stack> MutableItemDropStack(ItemStackData original)
+    {
+        _itemDropStack ??= new MutableArgument<Item.Stack>(ItemStackInterop.FromDataStack(original));
+        return _itemDropStack;
+    }
+
+    internal MutableArgument<Item.Stack> MutableItemDropStack(Item.Stack original)
+    {
+        _itemDropStack ??= new MutableArgument<Item.Stack>(original);
+        return _itemDropStack;
+    }
+
     internal void CommitMutable()
     {
         if (Descriptor.RequestKey != 0)
         {
-            if (_itemDrop is not null && _itemDrop.IsChanged)
+            if (_itemDropStack is not null && _itemDropStack.IsChanged)
             {
-                _plugin.Host.EventSetItemDrop(Descriptor.RequestKey, _itemDrop.Value);
+                _plugin.Host.EventSetItemDrop(Descriptor.RequestKey, _itemDropStack.Value.ToData());
+            }
+            else if (_itemDrop is not null && _itemDrop.IsChanged)
+            {
+                _plugin.Host.EventSetItemDrop(Descriptor.RequestKey, ItemStackInterop.FromData(_itemDrop.Value));
             }
             if (_cancelRequested && (Descriptor.Flags & AbiConstants.FlagCancellable) != 0)
             {
@@ -145,10 +223,25 @@ public class Plugin
         Func<CommandContext, bool>? Allow,
         Action<CommandContext, IReadOnlyList<string>> Run);
 
-    private sealed record ConventionSpec(
-        ushort EventId,
-        string MethodName,
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type PayloadType);
+    private sealed class ConventionSpec
+    {
+        public ConventionSpec(
+            ushort eventId,
+            string methodName,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type payloadType)
+        {
+            EventId = eventId;
+            MethodName = methodName;
+            PayloadType = payloadType;
+        }
+
+        public ushort EventId { get; }
+
+        public string MethodName { get; }
+
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]
+        public Type PayloadType { get; }
+    }
 
     private static readonly ConventionSpec[] ConventionSpecs =
     {
@@ -190,8 +283,8 @@ public class Plugin
         new(EventIds.EventQuit, "OnQuit", typeof(QuitPayload)),
         new(EventIds.EventDiagnostics, "OnDiagnostics", typeof(DiagnosticsPayload)),
         new(EventIds.EventJoin, "OnJoin", typeof(JoinPayload)),
-        new(EventIds.EventPluginCommand, "OnPluginCommand", typeof(PluginCommandPayload)),
     };
+    private static readonly IReadOnlyDictionary<Type, ushort> EventIdByPayloadType = BuildEventIdByPayloadType();
 
     private readonly Dictionary<uint, CommandHandlerRegistration> _commandHandlers = new();
     private readonly Dictionary<ushort, List<Action<EventContext, IEventPayload>>> _eventHandlers = new();
@@ -206,12 +299,58 @@ public class Plugin
             throw new ArgumentException("plugin name must be non-empty and contain no spaces", nameof(name));
         }
         Host = host ?? throw new ArgumentNullException(nameof(host));
+        Dispatcher = new CommandDispatcher(this);
         RegisterConventionHandlers();
     }
 
     public string Name { get; }
 
     public IGuestHost Host { get; }
+
+    public CommandDispatcher Dispatcher { get; }
+
+    public void Register(Command command)
+    {
+        Dispatcher.Register(command);
+    }
+
+    public void Register<T>(IEventListener<T> listener) where T : IEventPayload
+    {
+        if (listener is null)
+        {
+            throw new ArgumentNullException(nameof(listener));
+        }
+        Register<T>(listener.Handle);
+    }
+
+    public void Register<T>(Action<T> handler) where T : IEventPayload
+    {
+        if (handler is null)
+        {
+            throw new ArgumentNullException(nameof(handler));
+        }
+        Register<T>((_, payload) => handler(payload));
+    }
+
+    public void Register<T>(Action<EventContext, T> handler) where T : IEventPayload
+    {
+        if (handler is null)
+        {
+            throw new ArgumentNullException(nameof(handler));
+        }
+        if (!EventIdByPayloadType.TryGetValue(typeof(T), out var eventId))
+        {
+            throw new InvalidOperationException($"event payload type {typeof(T).Name} is not mapped to an event id");
+        }
+
+        HandleEvent(eventId, (ctx, payload) =>
+        {
+            if (payload is T typed)
+            {
+                handler(ctx, typed);
+            }
+        });
+    }
 
     public void RegisterCommand(string name, string description, IReadOnlyList<string>? aliases, Action<CommandContext> run)
     {
@@ -331,6 +470,7 @@ public class Plugin
         if (descriptor.EventId == EventIds.EventPluginCommand && decoded is PluginCommandPayload command)
         {
             DispatchCommand(descriptor.PlayerId, command);
+            return;
         }
 
         if (!_eventHandlers.TryGetValue(descriptor.EventId, out var handlers))
@@ -353,28 +493,32 @@ public class Plugin
         ctx.CommitMutable();
     }
 
-    public bool TryPlayerByName(string name, out Player_Player? player)
+    public Player? PlayerByName(string name)
     {
         name = (name ?? string.Empty).Trim();
         if (name.Length == 0)
         {
-            player = null;
-            return false;
+            return null;
         }
+
         var id = Host.ResolvePlayerByName(name);
         if (id == 0)
         {
-            player = null;
-            return false;
+            return null;
         }
-        var handle = Host.PlayerHandle(id);
-        if (handle == 0)
+
+        return PlayerById(id);
+    }
+
+    internal Player? PlayerById(ulong id)
+    {
+        if (id == 0)
         {
-            player = null;
-            return false;
+            return null;
         }
-        player = new Player_Player(handle);
-        return true;
+
+        var handle = Host.PlayerHandle(id);
+        return new Player(this, id, handle);
     }
 
     public IReadOnlyList<string> OnlinePlayerNames()
@@ -506,12 +650,35 @@ public class Plugin
         return outAliases.ToArray();
     }
 
+    private static IReadOnlyDictionary<Type, ushort> BuildEventIdByPayloadType()
+    {
+        var outMap = new Dictionary<Type, ushort>(ConventionSpecs.Length);
+        for (var i = 0; i < ConventionSpecs.Length; i++)
+        {
+            var spec = ConventionSpecs[i];
+            outMap[spec.PayloadType] = spec.EventId;
+        }
+        return outMap;
+    }
+
     private bool TryRegisterConvention(ConventionSpec spec)
     {
         var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         if (spec.EventId == EventIds.EventItemDrop)
         {
+            var mutableItemDropStackMethod = GetType().GetMethod(
+                spec.MethodName,
+                flags,
+                binder: null,
+                types: new[] { typeof(EventContext), typeof(MutableArgument<Item.Stack>) },
+                modifiers: null);
+            if (mutableItemDropStackMethod is not null && mutableItemDropStackMethod.ReturnType == typeof(void))
+            {
+                HandleEvent(spec.EventId, CreateMutableItemDropStackConvention(spec, mutableItemDropStackMethod));
+                return true;
+            }
+
             var mutableItemDropMethod = GetType().GetMethod(
                 spec.MethodName,
                 flags,
@@ -611,7 +778,26 @@ public class Plugin
             }
             try
             {
-                method.Invoke(this, new object?[] { ctx, ctx.MutableItemDrop(itemDrop.Item) });
+                method.Invoke(this, new object?[] { ctx, ctx.MutableItemDrop(ItemStackInterop.ToData(itemDrop.Item)) });
+            }
+            catch (Exception ex)
+            {
+                throw UnwrapInvocationException(ex);
+            }
+        };
+    }
+
+    private Action<EventContext, IEventPayload> CreateMutableItemDropStackConvention(ConventionSpec spec, MethodInfo method)
+    {
+        return (ctx, payload) =>
+        {
+            if (!spec.PayloadType.IsInstanceOfType(payload) || payload is not ItemDropPayload itemDrop)
+            {
+                return;
+            }
+            try
+            {
+                method.Invoke(this, new object?[] { ctx, ctx.MutableItemDropStack(itemDrop.Item) });
             }
             catch (Exception ex)
             {

@@ -1,6 +1,4 @@
 using BedrockPlugin.Sdk.Guest;
-using BedrockPlugin.Interop;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace BedrockPlugin.Examples.PingPlugin;
@@ -52,11 +50,12 @@ public sealed class PingPlugin : Plugin
         ctx.Messagef("{0} latency is {1}ms", targetName, latencyMillis);
     }
 
-    private bool TryResolvePingTarget(CommandContext ctx, IReadOnlyList<string> args, out Player_Player target)
+    private bool TryResolvePingTarget(CommandContext ctx, IReadOnlyList<string> args, out Player target)
     {
         if (args.Count == 0)
         {
-            if (!ctx.TryPlayer(out var sourcePlayer) || sourcePlayer is null)
+            var sourcePlayer = ctx.Player;
+            if (sourcePlayer is null)
             {
                 ctx.Message("console must provide a target player");
                 target = null!;
@@ -74,7 +73,8 @@ public sealed class PingPlugin : Plugin
             return false;
         }
 
-        if (!TryPlayerByName(targetName, out var resolved) || resolved is null)
+        var resolved = PlayerByName(targetName);
+        if (resolved is null)
         {
             ctx.Messagef("cannot resolve online player {0}", targetName);
             target = null!;
@@ -88,7 +88,8 @@ public sealed class PingPlugin : Plugin
 
     private void OnMove(EventContext ctx, Vec3 _, Rotation newRot)
     {
-        if (!ctx.TryPlayer(out var player) || player is null)
+        var player = ctx.Player;
+        if (player is null)
         {
             return;
         }

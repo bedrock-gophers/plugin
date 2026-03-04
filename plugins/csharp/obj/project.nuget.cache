@@ -1,13 +1,16 @@
 {
   "version": 2,
-  "dgSpecHash": "/jEaTuRCAUc=",
+  "dgSpecHash": "x6AaGFeXtVs=",
   "success": true,
   "projectFilePath": "/home/danick/projects/plugin/plugins/csharp/PingPlugin.csproj",
   "expectedPackageFiles": [
     "/home/danick/.nuget/packages/microsoft.dotnet.ilcompiler/8.0.24/microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
     "/home/danick/.nuget/packages/microsoft.net.illink.tasks/8.0.24/microsoft.net.illink.tasks.8.0.24.nupkg.sha512",
+    "/home/danick/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/8.0.24/runtime.linux-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
     "/home/danick/.nuget/packages/microsoft.netcore.app.ref/8.0.24/microsoft.netcore.app.ref.8.0.24.nupkg.sha512",
+    "/home/danick/.nuget/packages/microsoft.netcore.app.runtime.linux-x64/8.0.24/microsoft.netcore.app.runtime.linux-x64.8.0.24.nupkg.sha512",
     "/home/danick/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.24/microsoft.aspnetcore.app.ref.8.0.24.nupkg.sha512",
+    "/home/danick/.nuget/packages/microsoft.aspnetcore.app.runtime.linux-x64/8.0.24/microsoft.aspnetcore.app.runtime.linux-x64.8.0.24.nupkg.sha512",
     "/home/danick/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/8.0.24/runtime.linux-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512"
   ],
   "logs": []
